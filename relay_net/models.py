@@ -48,7 +48,7 @@ class DecoderBlock(nn.Module):
 
 
 class RelayNet(nn.Module):
-    def __init__(self):
+    def __init__(self, num_classes=9):
         super(RelayNet, self).__init__()
         self.encoder = nn.ModuleList(
                   [
@@ -72,7 +72,7 @@ class RelayNet(nn.Module):
                       DecoderBlock(64, 64),
                   ]
         )
-        self.classifier = nn.Conv2d(64, 4, kernel_size=1)
+        self.classifier = nn.Conv2d(64, num_classes, kernel_size=1)
 
     def forward(self, x):
         skip_connections = []
@@ -91,14 +91,3 @@ class RelayNet(nn.Module):
 
         x = self.classifier(x)
         return x
-
-
-
-
-def combined_loss(
-          predictions, targets, cross_entropy_loss_fn, dice_loss_fn,
-          weights):
-    cross_entropy_loss = cross_entropy_loss_fn(predictions, targets)
-    dice_loss = dice_loss_fn(predictions, targets, weights)
-    total_loss = cross_entropy_loss + dice_loss
-    return total_loss

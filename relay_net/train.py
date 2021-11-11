@@ -8,7 +8,7 @@ from data import OCTDataset
 from PIL import Image
 from tqdm import tqdm
 from models import RelayNet
-from typing import Union
+from losses import CombinedLoss
 
 def get_loaders(
           data_dir,
@@ -45,89 +45,6 @@ def get_loaders(
     return train_loader, valid_loader
 
 
-def overfit():
-    from data import OCTDataset
-    from torch import optim
-    dataset = OCTDataset("../dataset")
-    data, mask = dataset[0]
-    data = data.unsqueeze(0).unsqueeze(0).float()
-    mask = mask.unsqueeze(0).long()
-    model = RelayNet().float()
-
-
-def get_layer_channels(data: torch.Tensor):
-    """
-    Creates the channels for each layer.
-    :param data: torch.Tensor of shape N x H x W
-    :return: torch.Tensor of shape N x 4 x H x W
-    """
-
-    data = data.unsqueeze(1)
-    zeros = torch.zeros(data.shape[0], 2, *data.shape[2:])
-    zeros.scatter_(1, data, 1)
-    return zeros
-
-def show_layers(data: torch.Tensor):
-    """
-    Shows the layers in different colors.
-    :param data: torch.Tensor of shape [1 x C x] H x W
-    :return: None
-    """
-
-    assert not (len(data.shape) == 4 and data.shape[0] != 1), "Only batch size of 1 can be shown!"
-    data = data.cpu()
-    data.squeeze_(0)
-    if len(data.shape) == 3:
-        data = data.max(dim=0).indices
-    hue = torch.ones_like(data) * 10
-    value = torch.ones_like(data) * 10
-    data *= 50
-    img_array = torch.stack((hue, value, data)).byte().numpy().transpose((1, 2, 0))
-    img = Image.fromarray(img_array, mode="HSV")
-    img.show()
-
-
-@torch.no_grad()
-def show_prediction(model, data, target):
-    if len(data.shape) == 2:
-        data.unsqueeze_(0).unsqueeze_(0)
-    device = next(model.parameters()).device
-    prediction = model(data.to(device).float())
-    prediction = prediction.max(1).indices
-    show_layers(target)
-    show_layers(prediction)
-
-def dice_coefficient(prediction, target):
-    """
-    Computes the dice coefficient.
-    :param prediction: torch.Tensor of shape N x C x H x W
-    :param target: torch.Tensor of shape N x H x W
-    :return: torch.Tensor of shape N x C
-    """
-
-    target = get_layer_channels(target)
-    intersection = 2 * (prediction * target).sum((-1, -2))
-    denominator = (prediction + target).sum((-1, -2))
-    dice_coeff = (intersection / denominator)
-    return dice_coeff
-
-def dice_loss(predictions: torch.Tensor, targets: torch.Tensor, weights: Union[torch.Tensor, float] = 1.):
-    """
-    Computes the dice loss.
-    :param predictions: torch.Tensor of shape N x C x H x W,
-        the raw prediction of the model
-    :param targets: torch.Tensor of shape N x H x W,
-        the raw target from the dataset
-    :param weights: torch.Tensor of shape C,
-        per channel weights for loss weighting
-    :return: the dice loss summed over the channels, averaged over the batch
-    """
-    predictions_max = predictions.max(dim=1).indices
-    predictions_layered = get_layer_channels(predictions_max)
-    dice_coeff = dice_coefficient(predictions_layered, targets).mean(0)
-    loss = weights * (1 - dice_coeff).sum(0)
-    return loss
-
 
 @torch.no_grad()
 def validate(model: torch.nn.Module, loader: DataLoader, loss_fn):
@@ -156,17 +73,19 @@ def validate(model: torch.nn.Module, loader: DataLoader, loss_fn):
 
 
 
-def train(model, train_dl, optimizer, loss_fn, epoch, num_epochs, device="cpu"):
+def train(model, train_dl, optimizer, loss_fn, epoch, num_epochs, loss_list=None, device="cpu"):
     train_dl = tqdm(train_dl, desc=f"Epoch [{epoch} / {num_epochs}]", leave=False)
     for data, targets in train_dl:
         data = data.unsqueeze(1).to(device).float()
-        targets = targets.unsqueeze(1).to(device).long()
+        targets = targets.to(device).long()
         predictions = model(data)
         loss = loss_fn(predictions, targets)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        epoch.set_postfix(loss=loss.item())
+        if loss_list is not None:
+            loss_list.append(loss.item())
+        train_dl.set_postfix(loss=loss.item())
 
 
 def save_checkpoint(state, filename="checkpoint.pth"):
@@ -180,4 +99,12 @@ def load_checkpoint(model, checkpoint):
 
 
 if __name__ == "__main__":
-    pass
+    from models import RelayNet
+    from data import OCTDataset
+    from torch import nn
+
+    train_loader, valid_loader = get_loaders("../../generated/DME_64", 10, None, 2, .8)
+    model = RelayNet().float()
+    optimizer = torch.optim.Adam(model.parameters(), 3e-4)
+    loss_fn = CombinedLoss()
+    train(model, train_loader, optimizer, loss_fn, 0, 1)
