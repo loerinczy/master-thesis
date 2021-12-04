@@ -3,9 +3,9 @@
 # Imports
 import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler, Subset
-from torchvision import transforms
+from misc import get_layer_channels
 from data import OCTDataset
-from PIL import Image
+from losses import dice_coefficient
 from tqdm import tqdm
 from models import RelayNet
 from losses import CombinedLoss
@@ -18,7 +18,7 @@ def get_loaders(
           train_val_ratio
 ):
     train_ds = OCTDataset(data_dir, transform=train_transform)
-    valid_ds = OCTDataset(data_dir, transform=transforms.ToTensor())
+    valid_ds = OCTDataset(data_dir, transform=None)
     train_length = int(len(train_ds) * train_val_ratio / (1 + train_val_ratio))
     indices = list(
         SubsetRandomSampler(
@@ -47,7 +47,7 @@ def get_loaders(
 
 
 @torch.no_grad()
-def validate(model: torch.nn.Module, loader: DataLoader, loss_fn):
+def validate(model: torch.nn.Module, loader: DataLoader, loss_fn, num_classes):
     """
     Validates the model.
     :param model: torch.nn.Module
@@ -57,35 +57,44 @@ def validate(model: torch.nn.Module, loader: DataLoader, loss_fn):
     """
     model.eval()
     loader = tqdm(loader, desc="Validation", leave=False)
-    acc = 0
-    loss = 0
+    device = next(model.parameters()).device
+    dice_avg = torch.zeros((num_classes,), dtype=float)
     for batch_idx, (data, target) in enumerate(loader):
+        data = data.unsqueeze(1).float().to(device)
         prediction = model(data)
-        curr_loss = loss_fn(prediction, target).item()
-        loss += curr_loss
-        curr_acc = dice_coefficient(prediction, target)
-        acc += curr_acc
-        loader.set_postfix(acc=curr_acc.item(), loss=curr_loss.item())
+        target = target.long().to(device)
+        cross_loss, dice_loss = loss_fn(prediction, target)
+        prediction = get_layer_channels(prediction.max(dim=1).indices, num_classes)
+        dice = dice_coefficient(prediction, target, num_classes=num_classes)
+        dice_avg += dice.mean(0).cpu()
+        loader.set_postfix(dice_coeff=dice.mean().item(), cross_loss=cross_loss.item(), dice_loss=dice_loss.item())
     model.train()
-    acc /= (batch_idx + 1)
-    loss /= (batch_idx + 1)
-    return acc, loss
+    return dice_avg / len(loader)
 
 
 
-def train(model, train_dl, optimizer, loss_fn, epoch, num_epochs, loss_list=None, device="cpu"):
+def train(model, train_dl, optimizer, loss_fn, dice_factor, epoch, num_epochs, writer, device="cpu"):
     train_dl = tqdm(train_dl, desc=f"Epoch [{epoch} / {num_epochs}]", leave=False)
-    for data, targets in train_dl:
+    num_batches = len(train_dl)
+    cross_losses = []
+    dice_losses = []
+    for batch_idx, (data, targets) in enumerate(train_dl):
         data = data.unsqueeze(1).to(device).float()
         targets = targets.to(device).long()
         predictions = model(data)
-        loss = loss_fn(predictions, targets)
+        cross_loss, dice_loss = loss_fn(predictions, targets)
+        total_loss = cross_loss + dice_loss * dice_factor
         optimizer.zero_grad()
-        loss.backward()
+        total_loss.backward()
         optimizer.step()
-        if loss_list is not None:
-            loss_list.append(loss.item())
-        train_dl.set_postfix(loss=loss.item())
+        writer.add_scalar("Train/cross_loss", cross_loss.item(), num_batches * epoch + batch_idx)
+        writer.add_scalar("Train/dice_loss", dice_loss.item(), num_batches * epoch + batch_idx)
+        train_dl.set_postfix(cross_loss=cross_loss.item(), dice_loss=dice_loss.item())
+        cross_losses.append(cross_loss.item())
+        dice_losses.append(dice_loss.item())
+    cross_loss_avg = sum(cross_losses) / num_batches
+    dice_loss_avg = sum(dice_losses) / num_batches
+    return cross_loss_avg, dice_loss_avg
 
 
 def save_checkpoint(state, filename="checkpoint.pth"):

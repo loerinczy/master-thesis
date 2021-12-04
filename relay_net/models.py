@@ -73,6 +73,13 @@ class RelayNet(nn.Module):
                   ]
         )
         self.classifier = nn.Conv2d(64, num_classes, kernel_size=1)
+        self.initialize()
+
+    def initialize(self):
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                nn.init.kaiming_normal_(module.weight.data)
+
 
     def forward(self, x):
         skip_connections = []
@@ -91,3 +98,6 @@ class RelayNet(nn.Module):
 
         x = self.classifier(x)
         return x
+
+if __name__ == "__main__":
+    model = RelayNet()

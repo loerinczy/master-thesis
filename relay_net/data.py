@@ -31,6 +31,7 @@ class OCTDataset(Dataset):
         img = torch.from_numpy(np.array(Image.open(img_file)))
         mask = torch.from_numpy(np.array(Image.open(mask_file)))
         if self.transform is not None:
-            img = self.transform(img)
-            mask = self.transform(mask)
+            transformed = self.transform(image=img.numpy(), mask=mask.numpy())
+            img = torch.from_numpy(transformed["image"])
+            mask = torch.from_numpy(transformed["mask"])
         return img, mask
