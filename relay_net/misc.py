@@ -1,6 +1,24 @@
 import torch
 from PIL import Image
 import numpy as np
+from torch import nn
+
+
+def dice_coefficient(prediction, target, num_classes):
+    """
+    Computes the dice coefficient.
+    :param prediction: torch.Tensor of shape N x C x H x W
+    :param target: torch.Tensor of shape N x H x W
+    :return: torch.Tensor of shape N x C
+    """
+
+    target = get_layer_channels(target, num_classes)
+    prediction = prediction / prediction.sum(1).unsqueeze(1)
+    intersection = 2 * (prediction * target).sum((-1, -2))
+    denominator = (prediction + target).sum((-1, -2))
+    dice_coeff = intersection / denominator
+    return dice_coeff
+
 
 def get_layer_channels(data: torch.Tensor, num_classes):
     """
@@ -65,3 +83,42 @@ def show_prediction(model, data, target, colab=True):
     else:
         img_pred.show()
         img_target.show()
+
+
+def contour_error(pred, target):
+    classes = sorted(list(set(target.flatten().tolist())))
+    ce_dict = {}
+    mse_fn = nn.MSELoss()
+    for klass in classes[1:]:
+        pred_mask = (pred == klass).int()
+        pred_diff = (pred_mask[:, 1:] - pred_mask[:, :-1])
+        pred_idx = pred_diff.max(1).indices
+        target_mask = (target == klass).int()
+        target_diff = target_mask[:, 1:] - target_mask[:, :-1]
+        target_idx = target_diff.max(1).indices
+        mse = mse_fn(pred_idx.float(), target_idx.float())
+        ce_dict[klass] = mse.item()
+    return ce_dict
+
+def mad_lt(pred, target):
+    classes = sorted(list(set(target.flatten().tolist())))
+    mad_dict = {}
+    for klass in classes[1:-1]:
+        pred_mask = (pred == klass).int()
+        pred_diff = pred_mask[:, 1:] - pred_mask[:, :-1]
+        pred_widths = pred_diff.min(1).indices - pred_diff.max(1).indices
+        target_mask = (target == klass).int()
+        target_diff = target_mask[:, 1:] - target_mask[:, :-1]
+        target_widths = target_diff.min(1).indices - target_diff.max(1).indices
+        mad = (pred_widths - target_widths).abs().float().mean()
+        mad_dict[klass] = mad.item()
+    return mad_dict
+
+
+def dice_acc(pred, target, num_classes):
+    dice = dice_coefficient(pred, target, num_classes).mean(0)
+    dice_dict = {klass: dice[klass].item() for klass in range(dice.shape[0])}
+    return dice_dict
+
+
+

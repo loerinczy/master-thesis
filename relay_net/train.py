@@ -4,11 +4,11 @@
 import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler, Subset
 from misc import get_layer_channels
-from data import OCTDataset
-from losses import dice_coefficient
+from misc import contour_error, mad_lt, dice_acc
 from tqdm import tqdm
 from models import RelayNet
 from losses import CombinedLoss
+
 
 def get_loaders(
           data_dir,
@@ -58,18 +58,28 @@ def validate(model: torch.nn.Module, loader: DataLoader, loss_fn, num_classes):
     model.eval()
     loader = tqdm(loader, desc="Validation", leave=False)
     device = next(model.parameters()).device
-    dice_avg = torch.zeros((num_classes,), dtype=float)
+    ce = {i: 0 for i in range(1, num_classes)}
+    mad = {i: 0 for i in range(1, num_classes - 1)}
+    dice = {i: 0 for i in range(num_classes)}
     for batch_idx, (data, target) in enumerate(loader):
         data = data.unsqueeze(1).float().to(device)
         prediction = model(data)
         target = target.long().to(device)
         cross_loss, dice_loss = loss_fn(prediction, target)
-        prediction = get_layer_channels(prediction.max(dim=1).indices, num_classes)
-        dice = dice_coefficient(prediction, target, num_classes=num_classes)
-        dice_avg += dice.mean(0).cpu()
-        loader.set_postfix(dice_coeff=dice.mean().item(), cross_loss=cross_loss.item(), dice_loss=dice_loss.item())
+        prediction_mask = prediction.max(dim=1).indices
+        layer_mask = get_layer_channels(prediction_mask, num_classes)
+        curr_dice = dice_acc(layer_mask, target, num_classes)
+        curr_ce = contour_error(prediction_mask, target)
+        curr_mad = mad_lt(prediction_mask, target)
+        ce = {i: ce[i] + curr_ce[i] for i in ce.keys()}
+        mad = {i: mad[i] + curr_mad[i] for i in mad.keys()}
+        dice = {i: dice[i] + curr_dice[i] for i in dice.keys()}
+        ce_avg = sum(i for i in ce.values()) / len(ce.values())
+        mad_avg = sum(i for i in mad.values()) / len(mad.values())
+        dice_avg = sum(i for i in dice.values()) / len(dice.values())
+        loader.set_postfix(dice=dice_avg, mad=mad_avg, ce=ce_avg)
     model.train()
-    return dice_avg / len(loader)
+    return dice, ce, mad
 
 
 

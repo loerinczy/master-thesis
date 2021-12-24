@@ -1,23 +1,7 @@
 import torch
-from misc import get_layer_channels
+from misc import dice_coefficient
 from torch.nn import functional as F
 from torch import nn
-
-
-def dice_coefficient(prediction, target, num_classes):
-    """
-    Computes the dice coefficient.
-    :param prediction: torch.Tensor of shape N x C x H x W
-    :param target: torch.Tensor of shape N x H x W
-    :return: torch.Tensor of shape N x C
-    """
-
-    target = get_layer_channels(target, num_classes)
-    prediction = prediction / prediction.sum(1).unsqueeze(1)
-    intersection = 2 * (prediction * target).sum((-1, -2))
-    denominator = (prediction + target).sum((-1, -2))
-    dice_coeff = intersection / denominator
-    return dice_coeff
 
 
 class DiceLoss(nn.Module):
