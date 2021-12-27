@@ -2,7 +2,6 @@
 
 import torch
 import torch.nn as nn
-from tqdm import tqdm
 
 
 class EncoderBlock(nn.Module):
@@ -98,6 +97,3 @@ class RelayNet(nn.Module):
 
         x = self.classifier(x)
         return x
-
-if __name__ == "__main__":
-    model = RelayNet()

@@ -258,8 +258,22 @@ class DeepRetina(nn.Module):
 
 
 
-if __name__ == "__main__":
-    model = DeepRetina(8)
-    x = torch.randn((1, 1, 496, 64))
-    pred = model(x)
-    print(pred.shape)
+# if __name__ == "__main__":
+#     from data import OCTDataset
+#     from losses import FocalLoss
+#
+#     alpha = 1.
+#     gamma = 1.
+#     ds = OCTDataset("../../generated/DME_64")
+#     loss_fn = FocalLoss(alpha=alpha, gamma=gamma)
+#     model = DeepRetina(9)
+#     x, y = ds[0]
+#     x, y = x.unsqueeze(0).unsqueeze(0).float(), y.unsqueeze(0).long()
+#     opt = torch.optim.Adam(model.parameters(), lr=3e-4)
+#     for idx in range(100):
+#         opt.zero_grad()
+#         pred = model(x)
+#         loss = loss_fn(pred, y)
+#         loss.backward()
+#         opt.step()
+#         print(f"\r Step {idx} - Loss {loss.item()}", end="")

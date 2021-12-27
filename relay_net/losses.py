@@ -1,5 +1,5 @@
 import torch
-from misc import dice_coefficient
+from misc.misc import dice_coefficient
 from torch.nn import functional as F
 from torch import nn
 
