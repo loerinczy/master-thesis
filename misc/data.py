@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import Dataset
 from pathlib import Path
 from PIL import Image
+import json
 import numpy as np
 
 # Dataset
@@ -34,3 +35,22 @@ class OCTDataset(Dataset):
             img = torch.from_numpy(transformed["image"])
             mask = torch.from_numpy(transformed["mask"])
         return img, mask
+
+
+class RetLSTMDataset(Dataset):
+    def __init__(self, root: str):
+        self.root = Path(root)
+        self.img = lambda idx: f"img_{idx}.png"
+        with open(self.root / "boundary_indices.json", "r") as bfile:
+            self.boundary_dict = json.load(bfile)
+
+    def __len__(self):
+        return len(list(self.root.glob("img_*")))
+
+    def __getitem__(self, idx):
+        img_path = self.root / self.img(idx)
+        boundary_indices = self.boundary_dict[str(idx)]
+        boundary_indices = torch.tensor(boundary_indices)
+        img = np.array(Image.open(img_path))
+        img = torch.from_numpy(img).T
+        return img, boundary_indices
