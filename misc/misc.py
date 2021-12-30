@@ -4,7 +4,8 @@ import numpy as np
 from torch import nn
 from tqdm import tqdm
 from torch.utils.data import DataLoader, SubsetRandomSampler, Subset
-from data import OCTDataset
+from .data import OCTDataset
+
 
 
 def dice_coefficient(prediction, target, num_classes):
@@ -218,3 +219,11 @@ def validate(model: torch.nn.Module, loader: DataLoader, loss_fn, num_classes):
     ce.normalize()
     mad.normalize()
     return dice, ce, mad
+
+
+def get_layer_mask_from_boundaries(y, a_scan_length=496):
+    idx_tensor = torch.tile(torch.arange(0, a_scan_length), dims=(*y.shape[:-1], 1))
+    out = torch.zeros_like(idx_tensor)
+    for idx, row in enumerate(y.permute((-1, 0, 1))):
+        out[idx_tensor > row.unsqueeze(-1)] = idx + 1
+    return out
