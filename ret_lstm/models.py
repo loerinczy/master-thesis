@@ -27,3 +27,24 @@ class RetLSTM(nn.Module):
         prediction = torch.cat([self.fc(x_out).unsqueeze(0) for x_out in out], dim=0)
         return prediction
 
+
+class MiniModel(nn.Module):
+
+  def __init__(self, conv, fc):
+    super(MiniModel, self).__init__()
+    self.conv = conv
+    self.fc = fc
+    self.a_scan_length = 496
+    self.device = "cuda"
+
+  def forward(self, seq):
+      coord = torch.tile(
+                torch.arange(self.a_scan_length, dtype=torch.float32, device=self.device),
+                dims=(*seq.shape[:2], 1)
+      ).unsqueeze(2)
+      coord = (coord - self.a_scan_length / 2) / (self.a_scan_length / 2)
+      seq = torch.cat([seq.unsqueeze(2), coord], dim=2)
+      out = torch.cat([self.conv(x_in).unsqueeze(0) for x_in in seq], dim=0)
+      prediction = torch.cat([self.fc(x_out).unsqueeze(0) for x_out in out], dim=0)
+      return prediction
+

@@ -101,7 +101,7 @@ def contour_error(pred, target):
         target_diff = target_mask[:, 1:] - target_mask[:, :-1]
         target_idx = target_diff.max(1).indices
         mse = mse_fn(pred_idx.float(), target_idx.float())
-        ce_dict[klass - 1] = mse.item() / pred.shape[0]
+        ce_dict[klass - 1] = mse.item()
     return ce_dict
 
 def mad_lt(pred, target):
@@ -190,17 +190,20 @@ def get_loaders(
 
 
 @torch.no_grad()
-def validate(model: torch.nn.Module, loader: DataLoader, loss_fn, num_classes):
+def validate_relaynet(model: torch.nn.Module, loader: DataLoader, loss_fn, num_classes):
     """
     Validates the model.
     :param model: torch.nn.Module
     :param loader: torch.utils.data.DataLoader
     :param loss_fn: Function
+    :param num_classes: int
     :return: torch.Tensor, torch.Tensor
     """
     model.eval()
     loader = tqdm(loader, desc="Validation", leave=False)
     device = next(model.parameters()).device
+    cross_losses = []
+    dice_losses = []
     ce = Metric(0, num_classes - 2)
     mad = Metric(0, num_classes - 3)
     dice = Metric(0, num_classes - 1)
@@ -208,43 +211,76 @@ def validate(model: torch.nn.Module, loader: DataLoader, loss_fn, num_classes):
         data = data.unsqueeze(1).float().to(device)
         prediction = model(data)
         target = target.long().to(device)
+        cross_loss, dice_loss = loss_fn(prediction, target)
+        cross_losses.append(cross_loss.item())
+        dice_losses.append(dice_loss.item())
         prediction_mask = prediction.max(dim=1).indices
         layer_mask = get_layer_channels(prediction_mask, num_classes)
         dice_avg = dice.update(dice_acc(layer_mask, target, num_classes), return_avg=True)
         ce_avg = ce.update(contour_error(prediction_mask, target), return_avg=True)
         mad_avg = mad.update(mad_lt(prediction_mask, target), return_avg=True)
         loader.set_postfix(dice=dice_avg, mad=mad_avg, ce=ce_avg)
+    cross_loss = sum(cross_losses) / len(cross_losses)
+    dice_loss = sum(dice_losses) / len(dice_losses)
     model.train()
     dice.normalize()
     ce.normalize()
     mad.normalize()
-    return dice, ce, mad
-
-
-def normalize(x, y, x_mean, x_std, y_mean, y_std):
-  x_mean = torch.tile(x_mean, (x.shape[0], x.shape[1], 1))
-  x_std = torch.tile(x_std, (x.shape[0], x.shape[1], 1))
-  y_mean = torch.tile(y_mean, (x.shape[0], x.shape[1], 1))
-  y_std = torch.tile(y_std, (x.shape[0], x.shape[1], 1))
-  x_normalized = (x - x_mean) / x_std
-  y_normalized = (y - y_mean) / y_std
-  return x_normalized, y_normalized
-
-@torch.no_grad()
-def denormalize(y, y_mean, y_std):
-  y_mean = torch.tile(y_mean, (y.shape[0], y.shape[1], 1))
-  y_std = torch.tile(y_std, (y.shape[0], y.shape[1], 1))
-  y = (y * y_std.to(y.device) + y_mean.to(y.device))
-  return y
+    return cross_loss, dice_loss, dice, ce, mad
 
 
 @torch.no_grad()
-def validate_retlstm(model: torch.nn.Module, loader: DataLoader, mean_std, num_classes):
+def validate_deepretina(model: torch.nn.Module, loader: DataLoader, loss_fn, num_classes):
     """
     Validates the model.
     :param model: torch.nn.Module
     :param loader: torch.utils.data.DataLoader
     :param loss_fn: Function
+    :param num_classes: int
+    :return: torch.Tensor, torch.Tensor
+    """
+    model.eval()
+    loader = tqdm(loader, desc="Validation", leave=False)
+    device = next(model.parameters()).device
+    losses = []
+    ce = Metric(0, num_classes - 2)
+    mad = Metric(0, num_classes - 3)
+    dice = Metric(0, num_classes - 1)
+    for batch_idx, (data, target) in enumerate(loader):
+        data = data.unsqueeze(1).float().to(device)
+        prediction = model(data)
+        target = target.long().to(device)
+        loss = loss_fn(prediction, target)
+        losses.append(loss.item())
+        prediction_mask = prediction.max(dim=1).indices
+        layer_mask = get_layer_channels(prediction_mask, num_classes)
+        dice_avg = dice.update(dice_acc(layer_mask, target, num_classes), return_avg=True)
+        ce_avg = ce.update(contour_error(prediction_mask, target), return_avg=True)
+        mad_avg = mad.update(mad_lt(prediction_mask, target), return_avg=True)
+        loader.set_postfix(dice=dice_avg, mad=mad_avg, ce=ce_avg)
+    loss = sum(losses) / len(losses)
+    model.train()
+    dice.normalize()
+    ce.normalize()
+    mad.normalize()
+    return loss, dice, ce, mad
+
+
+@torch.no_grad()
+def validate_retlstm(
+          model: torch.nn.Module,
+          loader: DataLoader,
+          loss_fn,
+          mean_std: list,
+          num_classes: int
+):
+    """
+    Validates the model.
+    :param model: torch.nn.Module
+    :param loader: torch.utils.data.DataLoader
+    :param loss_fn: Function
+    :param mean_std: list
+    :param num_classes: int
     :return: torch.Tensor, torch.Tensor
     """
     model.eval()
@@ -253,12 +289,19 @@ def validate_retlstm(model: torch.nn.Module, loader: DataLoader, mean_std, num_c
     ce = Metric(0, num_classes - 2)
     mad = Metric(0, num_classes - 3)
     dice = Metric(0, num_classes - 1)
+    losses = []
     for batch_idx, (data, target) in enumerate(loader):
-        data, _ = normalize(data, target, *mean_std)
-        data, target = data.swapaxes(0, 1).to(device), target.swapaxes(0, 1).to(device)
+        data, target_normd = normalize(data, target, *mean_std)
+        data, target, target_normd = (
+            data.swapaxes(0, 1).to(device),
+            target.swapaxes(0, 1).to(device),
+            target_normd.swapaxes(0, 1).to(device)
+        )
         prediction = model(data)
+        loss = loss_fn(prediction, target_normd)
+        losses.append(loss.item())
         prediction = denormalize(prediction, *mean_std[2:])
-        mse = ((target - prediction)**2).sum(1).mean(0)
+        mse = ((target - prediction)**2).mean((0, 1))
         ce_avg = ce.update({idx: round(value, 3) for idx, value in enumerate(mse.tolist())}, return_avg=True)
         mad_dict = {i: (prediction[:, :, i] - target[:, :, i]).abs().mean().item() for i in range(num_classes - 2)}
         mad_avg = mad.update(mad_dict, return_avg=True)
@@ -267,11 +310,29 @@ def validate_retlstm(model: torch.nn.Module, loader: DataLoader, mean_std, num_c
         layer_mask = get_layer_channels(prediction_mask, num_classes)
         dice_avg = dice.update(dice_acc(layer_mask, target, num_classes), return_avg=True)
         loader.set_postfix(dice=dice_avg, mad=mad_avg, ce=ce_avg)
+    loss = sum(losses) / len(losses)
     model.train()
     dice.normalize()
     ce.normalize()
     mad.normalize()
-    return dice, ce, mad
+    return loss, dice, ce, mad
+
+
+def normalize(x, y, x_mean, x_std, y_mean, y_std):
+    x_mean = torch.tile(x_mean, (x.shape[0], x.shape[1], 1))
+    x_std = torch.tile(x_std, (x.shape[0], x.shape[1], 1))
+    y_mean = torch.tile(y_mean, (x.shape[0], x.shape[1], 1))
+    y_std = torch.tile(y_std, (x.shape[0], x.shape[1], 1))
+    x_normalized = (x - x_mean) / x_std
+    y_normalized = (y - y_mean) / y_std
+    return x_normalized, y_normalized
+
+@torch.no_grad()
+def denormalize(y, y_mean, y_std):
+    y_mean = torch.tile(y_mean, (y.shape[0], y.shape[1], 1))
+    y_std = torch.tile(y_std, (y.shape[0], y.shape[1], 1))
+    y = (y * y_std.to(y.device) + y_mean.to(y.device))
+    return y
 
 
 def get_layer_mask_from_boundaries(y, a_scan_length=496):
@@ -335,23 +396,24 @@ def show_layers_from_boundary_array(img_array, layer_array, fluid=None):
 
 
 def get_mean_std(loader):
-  x, y = next(iter(loader))
-  x_mean = torch.zeros((x.shape[-1],))
-  x_square_mean = torch.zeros((x.shape[-1],))
-  y_mean = torch.zeros((y.shape[-1],))
-  y_square_mean = torch.zeros((y.shape[-1],))
-  num_a_scans = 0
-  for x, y in loader:
-    x_mean += x.sum((0, 1))
-    x_square_mean += (x**2).sum((0, 1))
-    y_mean += y.sum((0, 1))
-    y_square_mean += (y**2).sum((0, 1))
-    num_a_scans += x.shape[1] * x.shape[0]
+    x, y = next(iter(loader))
+    x_mean = torch.zeros((x.shape[-1],))
+    x_square_mean = torch.zeros((x.shape[-1],))
+    y_mean = torch.zeros((y.shape[-1],))
+    y_square_mean = torch.zeros((y.shape[-1],))
+    num_a_scans = 0
+    for x, y in loader:
+        x_mean += x.sum((0, 1))
+        x_square_mean += (x**2).sum((0, 1))
+        y_mean += y.sum((0, 1))
+        y_square_mean += (y**2).sum((0, 1))
+        num_a_scans += x.shape[1] * x.shape[0]
 
-  x_mean /= num_a_scans
-  x_square_mean /= num_a_scans
-  y_mean /= num_a_scans
-  y_square_mean /= num_a_scans
-  x_std = (x_square_mean - x_mean**2).abs().sqrt()
-  y_std = (y_square_mean - y_mean**2).abs().sqrt()
-  return x_mean, x_std, y_mean, y_std
+    x_mean /= num_a_scans
+    x_square_mean /= num_a_scans
+    y_mean /= num_a_scans
+    y_square_mean /= num_a_scans
+    x_std = (x_square_mean - x_mean**2).abs().sqrt()
+    y_std = (y_square_mean - y_mean**2).abs().sqrt()
+    return x_mean, x_std, y_mean, y_std
+
