@@ -101,7 +101,7 @@ def contour_error(pred, target):
         target_diff = target_mask[:, 1:] - target_mask[:, :-1]
         target_idx = target_diff.max(1).indices
         mse = mse_fn(pred_idx.float(), target_idx.float())
-        ce_dict[klass - 1] = mse.item()
+        ce_dict[klass - 1] = mse.sqrt().item()
     return ce_dict
 
 def mad_lt(pred, target):
