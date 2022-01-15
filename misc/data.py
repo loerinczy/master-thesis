@@ -38,9 +38,10 @@ class OCTDataset(Dataset):
 
 
 class RetLSTMDataset(Dataset):
-    def __init__(self, root: str):
+    def __init__(self, root: str, transform=None):
         self.root = Path(root)
         self.img = lambda idx: f"img_{idx}.png"
+        self.transform = transform
         with open(self.root / "boundary_indices.json", "r") as bfile:
             self.boundary_dict = json.load(bfile)
 
@@ -49,8 +50,13 @@ class RetLSTMDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = self.root / self.img(idx)
-        boundary_indices = self.boundary_dict[str(idx)]
-        boundary_indices = torch.tensor(boundary_indices)
         img = np.array(Image.open(img_path))
+        boundary_indices = self.boundary_dict[str(idx)]
+        boundary_indices = np.array(boundary_indices).T
+        if self.transform:
+            transformed = self.transform(image=img, mask=boundary_indices)
+            img = transformed["image"]
+            boundary_indices = transformed["mask"].T
         img = torch.from_numpy(img).T
+        boundary_indices = torch.from_numpy(boundary_indices)
         return img, boundary_indices

@@ -156,19 +156,16 @@ class Metric:
 
 def get_loaders(
           data_dir,
+          dataset_class,
           batch_size,
           train_transform,
           num_workers,
           train_val_ratio
 ):
-    train_ds = OCTDataset(data_dir, transform=train_transform)
-    valid_ds = OCTDataset(data_dir, transform=None)
+    train_ds = dataset_class(data_dir, transform=train_transform)
+    valid_ds = dataset_class(data_dir, transform=None)
     train_length = int(len(train_ds) * train_val_ratio / (1 + train_val_ratio))
-    indices = list(
-        SubsetRandomSampler(
-            torch.arange(0, len(train_ds))
-            )
-        )
+    indices = list(SubsetRandomSampler(range(len(train_ds))))
     train_indices = indices[:train_length]
     valid_indices = indices[train_length:]
     train_ds = Subset(train_ds, train_indices)
