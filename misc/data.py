@@ -52,8 +52,9 @@ class RetLSTMDataset(Dataset):
         img_path = self.root / self.img(idx)
         img = np.array(Image.open(img_path))
         boundary_indices = self.boundary_dict[str(idx)]
-        boundary_indices = np.array(boundary_indices).T
+        boundary_indices = np.array(boundary_indices)
         if self.transform:
+            boundary_indices = boundary_indices.T
             transformed = self.transform(image=img, mask=boundary_indices)
             img = transformed["image"]
             boundary_indices = transformed["mask"].T

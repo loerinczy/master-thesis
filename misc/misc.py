@@ -4,7 +4,6 @@ import numpy as np
 from torch import nn
 from tqdm import tqdm
 from torch.utils.data import DataLoader, SubsetRandomSampler, Subset
-from .data import OCTDataset
 
 
 
@@ -22,6 +21,36 @@ def dice_coefficient(prediction, target, num_classes):
     denominator = (prediction + target).sum((-1, -2))
     dice_coeff = intersection / denominator
     return dice_coeff
+
+
+def intersection_over_union(prediction, target, num_classes):
+    """
+    Computes the intersection over union metric.
+    :param prediction: torch.Tensor of shape N x C x H x W
+    :param target: torch.Tensor of shape N x H x W
+    :return: torch.Tensor of shape N x C
+    """
+
+    target = get_layer_channels(target, num_classes)
+    intersection = prediction * target
+    denominator = (prediction + target - intersection).sum((-1, -2))
+    iou = intersection.sum((-1, -2)) / denominator
+    return iou
+
+
+def sensitivity(prediction, target, num_classes):
+    """
+    Computes the sensitivity metric.
+    :param prediction: torch.Tensor of shape N x C x H x W
+    :param target: torch.Tensor of shape N x H x W
+    :return: torch.Tensor of shape N x C
+    """
+
+    target = get_layer_channels(target, num_classes)
+    intersection = (prediction * target).sum((-1, -2))
+    denominator = target.sum((-1, -2))
+    se = intersection / denominator
+    return se
 
 
 def get_layer_channels(data: torch.Tensor, num_classes):
@@ -413,4 +442,3 @@ def get_mean_std(loader):
     x_std = (x_square_mean - x_mean**2).abs().sqrt()
     y_std = (y_square_mean - y_mean**2).abs().sqrt()
     return x_mean, x_std, y_mean, y_std
-
