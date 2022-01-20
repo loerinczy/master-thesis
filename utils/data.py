@@ -29,6 +29,7 @@ class OCTDataset(Dataset):
         img_file = self.data_dir / self.image_name(idx)
         mask_file = self.data_dir / self.mask_name(idx)
         img = torch.from_numpy(np.array(Image.open(img_file)))
+        img /= 255
         mask = torch.from_numpy(np.array(Image.open(mask_file)))
         if self.transform is not None:
             transformed = self.transform(image=img.numpy(), mask=mask.numpy())
@@ -51,9 +52,14 @@ class RetLSTMDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.root / self.img(idx)
         img = np.array(Image.open(img_path))
+        img /= 255
         boundary_indices = self.boundary_dict[str(idx)]
         boundary_indices = np.array(boundary_indices)
+        boundary_indices /= img.shape[-2]
         if self.transform:
+            img = self.transform[0][0](img)
+            boundary_indices = self.transform[0][1]
+        if self.transform[1]:
             boundary_indices = boundary_indices.T
             transformed = self.transform(image=img, mask=boundary_indices)
             img = transformed["image"]
