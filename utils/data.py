@@ -28,13 +28,15 @@ class OCTDataset(Dataset):
     def __getitem__(self, idx):
         img_file = self.data_dir / self.image_name(idx)
         mask_file = self.data_dir / self.mask_name(idx)
-        img = torch.from_numpy(np.array(Image.open(img_file)))
+        img = np.array(Image.open(img_file), dtype=float)
         img /= 255
-        mask = torch.from_numpy(np.array(Image.open(mask_file)))
+        mask = np.array(Image.open(mask_file))
         if self.transform is not None:
-            transformed = self.transform(image=img.numpy(), mask=mask.numpy())
-            img = torch.from_numpy(transformed["image"])
-            mask = torch.from_numpy(transformed["mask"])
+            transformed = self.transform(image=img, mask=mask)
+            img = transformed["image"]
+            mask = transformed["mask"]
+        img = torch.from_numpy(img)
+        mask = torch.from_numpy(mask)
         return img, mask
 
 
@@ -51,19 +53,19 @@ class RetLSTMDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = self.root / self.img(idx)
-        img = np.array(Image.open(img_path))
+        img = np.array(Image.open(img_path), dtype=float)
         img /= 255
         boundary_indices = self.boundary_dict[str(idx)]
-        boundary_indices = np.array(boundary_indices)
+        boundary_indices = np.array(boundary_indices, dtype=float)
         boundary_indices /= img.shape[-2]
         if self.transform:
-            img = self.transform[0][0](img)
-            boundary_indices = self.transform[0][1]
-        if self.transform[1]:
-            boundary_indices = boundary_indices.T
-            transformed = self.transform(image=img, mask=boundary_indices)
-            img = transformed["image"]
-            boundary_indices = transformed["mask"].T
+            img = self.transform[0][0](image=img)["image"]
+            boundary_indices = self.transform[0][1](image=boundary_indices)["image"]
+            if self.transform[1]:
+                boundary_indices = boundary_indices.T
+                transformed = self.transform(image=img, mask=boundary_indices)
+                img = transformed["image"]
+                boundary_indices = transformed["mask"].T
         img = torch.from_numpy(img).T
         boundary_indices = torch.from_numpy(boundary_indices)
         return img, boundary_indices

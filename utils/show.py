@@ -3,7 +3,7 @@ import torch
 from PIL import Image
 
 
-def show_layers_from_mask_array(img, mask):
+def show_layers_from_mask(img, mask):
     err_msg = "image and mask do not have the same dimensions"
     assert img.shape == mask.shape, err_msg
     if type(img) == torch.Tensor:
@@ -39,12 +39,18 @@ def show_layers_from_mask_array(img, mask):
     return img_w_layers
 
 
-def show_layers_from_boundary_array(img_array, layer_array, mean_std=None, fluid=None):
+def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_length=496, fluid=None):
     err_msg = "layer boundaries not compatible with image width"
     assert img_array.shape[1] == layer_array.shape[0], err_msg
+    if type(img_array) == torch.Tensor:
+      img_array = img_array.numpy()
+    if type(layer_array) == torch.Tensor:
+      layer_array = layer_array.numpy()
     if mean_std:
-        img_array = (img_array + mean_std[0]) * mean_std[1]
-        layer_array = (layer_array + mean_std[2]) * mean_std[3]
+        img_array = img_array * mean_std[1] + mean_std[0]
+        layer_array = layer_array * mean_std[3] + mean_std[2]
+    img_array = np.asarray(img_array * 255, "uint8")
+    layer_array = np.asarray(layer_array * a_scan_length, "uint8")
     dme_colorcode = {
         1: (170, 160, 250),
         2: (120, 200, 250),
@@ -101,8 +107,8 @@ def show_prediction(model, data, target, colab=True):
     model = model.cpu()
     prediction = model(data.float())
     prediction = prediction.max(1).indices
-    img_pred = show_layers_from_mask_array(data.squeeze(), prediction.squeeze())
-    img_target = show_layers_from_mask_array(data.squeeze(), target.squeeze())
+    img_pred = show_layers_from_mask((data.squeeze() * 255).byte(), prediction.squeeze())
+    img_target = show_layers_from_mask((data.squeeze() * 255).byte(), target.squeeze())
     if colab:
         return img_pred, img_target
     else:

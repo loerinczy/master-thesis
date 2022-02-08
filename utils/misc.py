@@ -1,9 +1,9 @@
-import locale
-
+import numpy as np
 import torch
-from data import OCTDataset, RetLSTMDataset
+from utils.data import OCTDataset, RetLSTMDataset
 from torch.utils.data import DataLoader, Subset
 import albumentations as A
+from pathlib import Path
 
 
 def dice_coefficient(prediction, target, num_classes):
@@ -47,11 +47,11 @@ def get_mean_std(ds, retlstm=False):
         if retlstm:
             y_mean += y.sum()
             y_square_mean += (y**2).sum()
-    x_mean /= len(ds)
-    x_square_mean /= len(ds)
+    x_mean /= len(ds) * np.prod(x.shape)
+    x_square_mean /= len(ds) * np.prod(x.shape)
     if retlstm:
-        y_mean /= len(ds)
-        y_square_mean /= len(ds)
+        y_mean /= len(ds) * np.prod(y.shape)
+        y_square_mean /= len(ds) * np.prod(y.shape)
     x_std = (x_square_mean - x_mean**2).abs().sqrt()
     if retlstm:
         y_std = (y_square_mean - y_mean**2).abs().sqrt()
@@ -61,11 +61,42 @@ def get_mean_std(ds, retlstm=False):
 
 def get_loaders(
           data_dir,
+          patch_width,
+          batch_size,
+          train_transform,
+          num_workers,
+):
+    data_dir = Path(data_dir)
+    train_ds = OCTDataset(data_dir / "training" / f"DME_{patch_width}")
+    mean_std = get_mean_std(Subset(train_ds, range(len(train_ds))))
+    norm = A.Normalize((mean_std[0],), (mean_std[1],), max_pixel_value=1., always_apply=True)
+    transf = A.Compose((norm, train_transform))
+    train_ds = OCTDataset(data_dir / "training" / f"DME_{patch_width}", transform=transf)
+    valid_ds = OCTDataset(data_dir / "validation" / f"DME_{patch_width}", transform=norm)
+
+    train_loader = DataLoader(
+              train_ds,
+              batch_size=batch_size,
+              num_workers=num_workers,
+              shuffle=True
+    )
+    valid_loader = DataLoader(
+              valid_ds,
+              batch_size=batch_size,
+              num_workers=num_workers,
+              shuffle=False
+    )
+    return train_loader, valid_loader, mean_std
+
+
+def get_loaders_retlstm(
+          data_dir,
           batch_size,
           train_transform,
           num_workers,
           train_val_ratio,
           indices=None,
+          relaynet_setup=True,
           retlstm=False
 ):
     dataset_class = RetLSTMDataset if retlstm else OCTDataset
@@ -78,18 +109,13 @@ def get_loaders(
         valid_indices = range(train_length, len(train_ds))
     train_ds = Subset(train_ds, train_indices)
     mean_std = get_mean_std(train_ds, retlstm)
-    if retlstm:
         norm = [
-            A.Normalize((mean_std[0],), (mean_std[1],)),
-            A.Normalize((mean_std[2], ), (mean_std[4],))
+            A.Normalize((mean_std[0],), (mean_std[1],), max_pixel_value=1., always_apply=True),
+            A.Normalize((mean_std[2],), (mean_std[3],), max_pixel_value=1., always_apply=True)
         ]
         train_ds = dataset_class(data_dir, transform=(norm, train_transform))
         valid_ds = dataset_class(data_dir, transform=norm)
-    else:
-        norm = A.Normalize((mean_std[0],), (mean_std[1],))
-        transf = A.Compose((norm, train_transform))
-        train_ds = dataset_class(data_dir, transform=transf)
-        valid_ds = dataset_class(data_dir, transform=norm)
+    train_ds = Subset(train_ds, train_indices)
     valid_ds = Subset(valid_ds, valid_indices)
 
     train_loader = DataLoader(
@@ -104,7 +130,7 @@ def get_loaders(
               num_workers=num_workers,
               shuffle=False
     )
-    return train_loader, valid_loader
+    return train_loader, valid_loader, mean_std
 
 
 def get_layer_mask_from_boundaries(y, a_scan_length=496):
@@ -115,6 +141,10 @@ def get_layer_mask_from_boundaries(y, a_scan_length=496):
     return out
 
 
+def denormalize(t, mean_std, max_val):
+    t = t * mean_std[1] + mean_std[0]
+    t *= max_val
+    return t
 
 
 

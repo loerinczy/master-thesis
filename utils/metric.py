@@ -1,5 +1,5 @@
 import torch.nn as nn
-from misc import dice_coefficient, get_layer_channels
+from utils.misc import dice_coefficient, get_layer_channels
 
 
 def contour_error(pred, target):

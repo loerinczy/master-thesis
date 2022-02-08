@@ -1,8 +1,8 @@
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from misc import get_layer_channels, get_layer_mask_from_boundaries
-from metric import (
+from utils.misc import get_layer_channels, get_layer_mask_from_boundaries
+from utils.metric import (
     Metric, dice_acc, contour_error, sensitivity, intersection_over_union, mad_lt
 )
 
@@ -86,7 +86,6 @@ def validate_retlstm(
           model: torch.nn.Module,
           loader: DataLoader,
           loss_fn,
-          mean_std: list,
           num_classes: int
 ):
     """
@@ -113,8 +112,6 @@ def validate_retlstm(
         prediction = model(data)
         loss = loss_fn(prediction, target)
         losses.append(loss.item())
-        prediction = (prediction + mean_std[0]) * mean_std[1]
-        target = (target + mean_std[0]) * mean_std[1]
         mse = ((target - prediction)**2).mean((0, 1))
         ce_avg = ce.update({idx: round(value, 3) for idx, value in enumerate(mse.tolist())}, return_avg=True)
         mad_dict = {i: (prediction[:, :, i] - target[:, :, i]).abs().mean().item() for i in range(num_classes - 2)}
