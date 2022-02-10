@@ -86,7 +86,9 @@ def validate_retlstm(
           model: torch.nn.Module,
           loader: DataLoader,
           loss_fn,
-          num_classes: int
+          mean_std: list,
+          num_classes: int,
+          a_scan_length: int = 496,
 ):
     """
     Validates the model.
@@ -112,6 +114,8 @@ def validate_retlstm(
         prediction = model(data)
         loss = loss_fn(prediction, target)
         losses.append(loss.item())
+        prediction = (prediction * mean_std[3] + mean_std[2]) * a_scan_length
+        target = (target * mean_std[3] + mean_std[2]) * a_scan_length
         mse = ((target - prediction)**2).mean((0, 1))
         ce_avg = ce.update({idx: round(value, 3) for idx, value in enumerate(mse.tolist())}, return_avg=True)
         mad_dict = {i: (prediction[:, :, i] - target[:, :, i]).abs().mean().item() for i in range(num_classes - 2)}

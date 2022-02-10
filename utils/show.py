@@ -3,13 +3,15 @@ import torch
 from PIL import Image
 
 
-def show_layers_from_mask(img, mask):
+def show_layers_from_mask(img, mask, normed=False):
     err_msg = "image and mask do not have the same dimensions"
     assert img.shape == mask.shape, err_msg
     if type(img) == torch.Tensor:
         img = img.cpu().numpy()
     if type(mask) == torch.Tensor:
         mask = mask.cpu().numpy()
+    if normed:
+        img = np.asarray(img * 255, "uint8")
     dme_colorcode = {
         1: (170, 160, 250),
         2: (120, 200, 250),
@@ -39,18 +41,19 @@ def show_layers_from_mask(img, mask):
     return img_w_layers
 
 
-def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_length=496, fluid=None):
+def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_length=496, fluid=None, normed=False):
     err_msg = "layer boundaries not compatible with image width"
-    assert img_array.shape[1] == layer_array.shape[0], err_msg
+    assert img_array.shape[1] == layer_array.shape[1], err_msg
     if type(img_array) == torch.Tensor:
-      img_array = img_array.numpy()
+        img_array = img_array.numpy()
     if type(layer_array) == torch.Tensor:
-      layer_array = layer_array.numpy()
+        layer_array = layer_array.numpy()
     if mean_std:
-        img_array = img_array * mean_std[1] + mean_std[0]
-        layer_array = layer_array * mean_std[3] + mean_std[2]
-    img_array = np.asarray(img_array * 255, "uint8")
-    layer_array = np.asarray(layer_array * a_scan_length, "uint8")
+        img_array = img_array * mean_std[1].numpy() + mean_std[0].numpy()
+        layer_array = layer_array * mean_std[3].numpy() + mean_std[2].numpy()
+    if normed:
+        img_array = np.asarray(img_array * 255, "uint8")
+        layer_array = np.asarray(layer_array * a_scan_length, "uint8")
     dme_colorcode = {
         1: (170, 160, 250),
         2: (120, 200, 250),
@@ -70,6 +73,7 @@ def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_leng
     saturation = np.zeros_like(img_array, dtype="uint8")
     value = np.zeros_like(img_array, dtype="uint8")
     mask = np.zeros(img_array.shape, dtype="uint8")
+    layer_array = layer_array.T
     for w in range(img_array.shape[1]):
         if ~np.isnan(layer_array[w, :]).any():
             last_boundary = int(layer_array[w, 0])

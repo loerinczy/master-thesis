@@ -17,7 +17,7 @@ def dice_coefficient(prediction, target, num_classes):
     target = get_layer_channels(target, num_classes)
     prediction = prediction / prediction.sum(1).unsqueeze(1)
     intersection = 2 * (prediction * target).sum((-1, -2))
-    denominator = (prediction + target).sum((-1, -2))
+    denominator = (prediction + target + 1e-12).sum((-1, -2))
     dice_coeff = intersection / denominator
     return dice_coeff
 
@@ -91,32 +91,20 @@ def get_loaders(
 
 def get_loaders_retlstm(
           data_dir,
+          patch_width,
           batch_size,
           train_transform,
           num_workers,
-          train_val_ratio,
-          indices=None,
-          relaynet_setup=True,
-          retlstm=False
 ):
-    dataset_class = RetLSTMDataset if retlstm else OCTDataset
-    train_ds = dataset_class(data_dir, transform=None)
-    if indices:
-        train_indices, valid_indices = indices
-    else:
-        train_length = int(len(train_ds) * train_val_ratio / (1 + train_val_ratio))
-        train_indices = range(train_length)
-        valid_indices = range(train_length, len(train_ds))
-    train_ds = Subset(train_ds, train_indices)
-    mean_std = get_mean_std(train_ds, retlstm)
-        norm = [
-            A.Normalize((mean_std[0],), (mean_std[1],), max_pixel_value=1., always_apply=True),
-            A.Normalize((mean_std[2],), (mean_std[3],), max_pixel_value=1., always_apply=True)
-        ]
-        train_ds = dataset_class(data_dir, transform=(norm, train_transform))
-        valid_ds = dataset_class(data_dir, transform=norm)
-    train_ds = Subset(train_ds, train_indices)
-    valid_ds = Subset(valid_ds, valid_indices)
+    data_dir = Path(data_dir)
+    train_ds = RetLSTMDataset(data_dir / "training" / f"DME_{patch_width}")
+    mean_std = get_mean_std(Subset(train_ds, range(len(train_ds))), retlstm=True)
+    norm = [
+        A.Normalize((mean_std[0],), (mean_std[1],), max_pixel_value=1., always_apply=True),
+        A.Normalize((mean_std[2],), (mean_std[3],), max_pixel_value=1., always_apply=True)
+    ]
+    train_ds = RetLSTMDataset(data_dir / "training" / f"DME_{patch_width}", transform=(norm, train_transform))
+    valid_ds = RetLSTMDataset(data_dir / "validation" / f"DME_{patch_width}", transform=(norm, None))
 
     train_loader = DataLoader(
               train_ds,

@@ -3,7 +3,8 @@ from utils.misc import dice_coefficient, get_layer_channels
 
 
 def contour_error(pred, target):
-    classes = sorted(list(set(target.flatten().tolist())))
+    # classes = sorted(list(set(target.flatten().tolist())))
+    classes = range(1, 9)
     ce_dict = {}
     mse_fn = nn.MSELoss()
     for klass in classes[1:]:
@@ -19,15 +20,16 @@ def contour_error(pred, target):
 
 
 def mad_lt(pred, target):
-    classes = sorted(list(set(target.flatten().tolist())))
+    # classes = sorted(list(set(target.flatten().tolist())))
+    classes = range(1, 8)
     mad_dict = {}
     for klass in classes[1:-1]:
         pred_mask = (pred == klass).int()
         pred_diff = pred_mask[:, 1:] - pred_mask[:, :-1]
-        pred_widths = pred_diff.min(1).indices - pred_diff.max(1).indices
+        pred_widths = pred_diff.shape[1] - 1 - pred_diff.flip(1).min(1).indices - pred_diff.max(1).indices
         target_mask = (target == klass).int()
         target_diff = target_mask[:, 1:] - target_mask[:, :-1]
-        target_widths = target_diff.min(1).indices - target_diff.max(1).indices
+        target_widths = target_diff.shape[1] - 1 - target_diff.flip(1).min(1).indices - target_diff.max(1).indices
         mad = (pred_widths - target_widths).abs().float().mean()
         mad_dict[klass - 1] = mad.item()
     return mad_dict
@@ -37,6 +39,18 @@ def dice_acc(pred, target, num_classes):
     dice = dice_coefficient(pred, target, num_classes).mean(0)
     dice_dict = {klass: dice[klass].item() for klass in range(dice.shape[0])}
     return dice_dict
+
+
+# This initialization consistenly underperforms the default Glorot initialization
+def initialize(model):
+  for m in model.modules():
+    if isinstance(m, nn.Conv2d):
+      nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
+      # nn.init.xavier_normal_(m.weight)
+    if isinstance(m, nn.Linear):
+      # nn.init.xavier_normal_(m.weight)
+      nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
+      nn.init.constant_(m.bias, 0)
 
 
 def intersection_over_union(prediction, target, num_classes):
@@ -50,7 +64,7 @@ def intersection_over_union(prediction, target, num_classes):
     target = get_layer_channels(target, num_classes)
     intersection = prediction * target
     denominator = (prediction + target - intersection).sum((-1, -2))
-    iou = intersection.sum((-1, -2)) / denominator
+    iou = intersection.sum((-1, -2)) / (denominator + 1e-12)
     iou_avg = iou.mean(0)
     iou_dict = {i: class_iou.item() for i, class_iou in enumerate(iou_avg)}
     return iou_dict
@@ -67,7 +81,7 @@ def sensitivity(prediction, target, num_classes):
     target = get_layer_channels(target, num_classes)
     intersection = (prediction * target).sum((-1, -2))
     denominator = target.sum((-1, -2))
-    se = intersection / denominator
+    se = intersection / (denominator + 1e-12)
     se_avg = se.mean(0)
     se_dict = {i: class_se.item() for i, class_se in enumerate(se_avg)}
     return se_dict
