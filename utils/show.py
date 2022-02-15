@@ -43,11 +43,15 @@ def show_layers_from_mask(img, mask, normed=False):
 
 def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_length=496, fluid=None, normed=False):
     err_msg = "layer boundaries not compatible with image width"
+    if len(img_array.shape) == 3:
+        img_array.squeeze_()
+    if len(layer_array.shape) == 3:
+        layer_array.squeeze_()
     assert img_array.shape[1] == layer_array.shape[1], err_msg
     if type(img_array) == torch.Tensor:
-        img_array = img_array.numpy()
+        img_array = img_array.detach().cpu().numpy()
     if type(layer_array) == torch.Tensor:
-        layer_array = layer_array.numpy()
+        layer_array = layer_array.detach().cpu().numpy()
     if mean_std:
         img_array = img_array * mean_std[1].numpy() + mean_std[0].numpy()
         layer_array = layer_array * mean_std[3].numpy() + mean_std[2].numpy()
@@ -105,14 +109,19 @@ def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_leng
 
 
 @torch.no_grad()
-def show_prediction(model, data, target, colab=True):
+def show_prediction(model, data, target, mean_std, standardized=False, colab=True):
     if len(data.shape) == 2:
         data.unsqueeze_(0).unsqueeze_(0)
-    model = model.cpu()
+    dev = next(model.parameters()).device
+    model.cpu()
+    if not standardized:
+      data = (data - mean_std[0]) / mean_std[1]
     prediction = model(data.float())
     prediction = prediction.max(1).indices
-    img_pred = show_layers_from_mask((data.squeeze() * 255).byte(), prediction.squeeze())
-    img_target = show_layers_from_mask((data.squeeze() * 255).byte(), target.squeeze())
+    data = (data.squeeze() * mean_std[1] + mean_std[0]) * 255
+    img_pred = show_layers_from_mask(data.byte(), prediction.squeeze())
+    img_target = show_layers_from_mask(data.byte(), target.squeeze())
+    model.to(dev)
     if colab:
         return img_pred, img_target
     else:

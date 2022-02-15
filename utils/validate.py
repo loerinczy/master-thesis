@@ -22,8 +22,8 @@ def validate_relaynet(model: torch.nn.Module, loader: DataLoader, loss_fn, num_c
     device = next(model.parameters()).device
     cross_losses = []
     dice_losses = []
-    ce = Metric(0, num_classes - 2)
-    mad = Metric(0, num_classes - 3)
+    ce = Metric(1, 8)
+    mad = Metric(1, 7)
     dice = Metric(0, num_classes - 1)
     for batch_idx, (data, target) in enumerate(loader):
         data = data.unsqueeze(1).float().to(device)

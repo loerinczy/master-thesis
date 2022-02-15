@@ -3,11 +3,10 @@ from utils.misc import dice_coefficient, get_layer_channels
 
 
 def contour_error(pred, target):
-    # classes = sorted(list(set(target.flatten().tolist())))
     classes = range(1, 9)
     ce_dict = {}
     mse_fn = nn.MSELoss()
-    for klass in classes[1:]:
+    for klass in classes:
         pred_mask = (pred == klass).int()
         pred_diff = (pred_mask[:, 1:] - pred_mask[:, :-1])
         pred_idx = pred_diff.max(1).indices
@@ -15,15 +14,14 @@ def contour_error(pred, target):
         target_diff = target_mask[:, 1:] - target_mask[:, :-1]
         target_idx = target_diff.max(1).indices
         mse = mse_fn(pred_idx.float(), target_idx.float())
-        ce_dict[klass - 1] = mse.sqrt().item()
+        ce_dict[klass] = mse.sqrt().item()
     return ce_dict
 
 
 def mad_lt(pred, target):
-    # classes = sorted(list(set(target.flatten().tolist())))
     classes = range(1, 8)
     mad_dict = {}
-    for klass in classes[1:-1]:
+    for klass in classes:
         pred_mask = (pred == klass).int()
         pred_diff = pred_mask[:, 1:] - pred_mask[:, :-1]
         pred_widths = pred_diff.shape[1] - 1 - pred_diff.flip(1).min(1).indices - pred_diff.max(1).indices
@@ -31,7 +29,7 @@ def mad_lt(pred, target):
         target_diff = target_mask[:, 1:] - target_mask[:, :-1]
         target_widths = target_diff.shape[1] - 1 - target_diff.flip(1).min(1).indices - target_diff.max(1).indices
         mad = (pred_widths - target_widths).abs().float().mean()
-        mad_dict[klass - 1] = mad.item()
+        mad_dict[klass] = mad.item()
     return mad_dict
 
 
@@ -39,18 +37,6 @@ def dice_acc(pred, target, num_classes):
     dice = dice_coefficient(pred, target, num_classes).mean(0)
     dice_dict = {klass: dice[klass].item() for klass in range(dice.shape[0])}
     return dice_dict
-
-
-# This initialization consistenly underperforms the default Glorot initialization
-def initialize(model):
-  for m in model.modules():
-    if isinstance(m, nn.Conv2d):
-      nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
-      # nn.init.xavier_normal_(m.weight)
-    if isinstance(m, nn.Linear):
-      # nn.init.xavier_normal_(m.weight)
-      nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
-      nn.init.constant_(m.bias, 0)
 
 
 def intersection_over_union(prediction, target, num_classes):

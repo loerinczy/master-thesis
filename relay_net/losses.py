@@ -8,7 +8,7 @@ class DiceLoss(nn.Module):
 
     def __init__(self, weight_channel, num_classes):
         super(DiceLoss, self).__init__()
-        self.weight_channel = weight_channel / weight_channel.sum()
+        self.weight_channel = weight_channel
         self.num_classes = num_classes
 
     def forward(self, predictions: torch.Tensor, targets: torch.Tensor):
@@ -24,7 +24,9 @@ class DiceLoss(nn.Module):
         """
         predictions_exp = predictions.exp()
         dice_coeff = dice_coefficient(predictions_exp, targets, self.num_classes).mean(0)
-        loss = (self.weight_channel * (1 - dice_coeff)).mean(0)
+        weight = 1 + self.weight_channel
+        weight /= weight.sum()
+        loss = (weight * (1 - dice_coeff)).sum()
         return loss
 
 
@@ -46,14 +48,14 @@ class CombinedLoss(nn.Module):
 
     def forward(self, predictions, targets):
         weight_boundary = F.pad(targets[:, 1:, :] - targets[:, :-1, :], (0, 0, 0, 1), "constant", 0)
-        weight_boundary = weight * self.weight_boundary_cross
-        weight_channel = torch.zeros(*targets.shape, self.num_classes).scatter_(
+        weight_boundary = weight_boundary * self.weight_boundary_cross
+        weight_channel = torch.zeros(*targets.shape, self.num_classes, device=targets.device).scatter_(
                   -1, targets.unsqueeze(-1), 1
         )
         weight_channel = weight_channel * self.weight_channel_cross
         weight_channel = weight_channel.max(-1).values
-        cross_entropy_loss = (self.cross_entropy_loss_fn(predictions, targets) * (
-                  1 + weight_boundary + weight_channel
-        )).mean()
+        weight = 1 + weight_boundary + weight_channel
+        weight /= weight.sum()
+        cross_entropy_loss = (self.cross_entropy_loss_fn(predictions, targets) * weight).sum()
         dice_loss = self.dice_loss_fn(predictions, targets)
         return cross_entropy_loss, dice_loss
