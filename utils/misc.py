@@ -35,6 +35,23 @@ def get_layer_channels(data: torch.Tensor, num_classes):
     return zeros
 
 
+def get_fluid_boundary(fluid):
+    shifted = fluid[:, :, 1:] - fluid[:, :, :-1]
+    x, y, z = torch.where(shifted == -1)
+    z = z - 1
+    shifted[shifted != 1] = 0
+    shifted[x, y, z] = 1
+    mask1 = torch.nn.functional.pad(shifted, (1, 0, 0, 0), "constant", 0)
+    shifted = fluid[:, 1:, :] - fluid[:, :-1, :]
+    x, y, z = torch.where(shifted == -1)
+    y = y - 1
+    shifted[shifted != 1] = 0
+    shifted[x, y, z] = 1
+    mask2 = torch.nn.functional.pad(shifted, (0, 0, 1, 0), "constant", 0)
+    mask = torch.logical_or(mask1, mask2).int()
+    return mask
+
+
 def get_mean_std(ds, retlstm=False):
     x_mean = 0
     x_square_mean = 0
@@ -61,18 +78,22 @@ def get_mean_std(ds, retlstm=False):
 
 def get_loaders(
           data_dir,
+          fluid,
           patch_width,
           batch_size,
           train_transform,
           num_workers,
 ):
     data_dir = Path(data_dir)
-    train_ds = OCTDataset(data_dir / "training" / f"DME_{patch_width}")
+    train_ds = OCTDataset(data_dir / "training" / f"DME_{patch_width}", fluid)
     mean_std = get_mean_std(Subset(train_ds, range(len(train_ds))))
     norm = A.Normalize((mean_std[0],), (mean_std[1],), max_pixel_value=1., always_apply=True)
-    transf = A.Compose((norm, train_transform))
-    train_ds = OCTDataset(data_dir / "training" / f"DME_{patch_width}", transform=transf)
-    valid_ds = OCTDataset(data_dir / "validation" / f"DME_{patch_width}", transform=norm)
+    if fluid:
+        transf = A.Compose((norm, train_transform), additional_targets={"fluid": "mask"})
+    else:
+        transf = A.Compose((norm, train_transform))
+    train_ds = OCTDataset(data_dir / "training" / f"DME_{patch_width}", fluid, transform=transf)
+    valid_ds = OCTDataset(data_dir / "validation" / f"DME_{patch_width}", fluid, transform=norm)
 
     train_loader = DataLoader(
               train_ds,

@@ -3,13 +3,16 @@ import torch
 from PIL import Image
 
 
-def show_layers_from_mask(img, mask, normed=False):
+def show_layers_from_mask(img, mask, mean_std=None, normed=False):
     err_msg = "image and mask do not have the same dimensions"
     assert img.shape == mask.shape, err_msg
     if type(img) == torch.Tensor:
         img = img.cpu().numpy()
     if type(mask) == torch.Tensor:
         mask = mask.cpu().numpy()
+    if mean_std:
+        img = img * mean_std[1].numpy() + mean_std[0].numpy()
+        normed = True
     if normed:
         img = np.asarray(img * 255, "uint8")
     dme_colorcode = {

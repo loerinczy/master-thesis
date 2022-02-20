@@ -13,7 +13,7 @@ from scipy.io import loadmat
 # Dataset
 class OCTDataset(Dataset):
 
-    def __init__(self, data_dir, transform=None):
+    def __init__(self, data_dir, fluid, transform=None):
         assert Path(
             data_dir
             ).exists(), f"The directory {data_dir} does not exists!"
@@ -22,7 +22,9 @@ class OCTDataset(Dataset):
         self.len = len(list(Path(data_dir).glob("img_*")))
         self.image_name = lambda idx: f"img_{idx}.png"
         self.mask_name = lambda idx: f"mask_{idx}.png"
+        self.fluid_name = lambda idx: f"fluid_{idx}.png"
         self.transform = transform
+        self.fluid = fluid
 
     def __len__(self):
         return self.len
@@ -30,16 +32,28 @@ class OCTDataset(Dataset):
     def __getitem__(self, idx):
         img_file = self.data_dir / self.image_name(idx)
         mask_file = self.data_dir / self.mask_name(idx)
+        fluid_file = self.data_dir / self.fluid_name(idx)
         img = np.array(Image.open(img_file), dtype=float)
         img /= 255
         mask = np.array(Image.open(mask_file))
+        fluid = np.array(Image.open(fluid_file))
         if self.transform is not None:
-            transformed = self.transform(image=img, mask=mask)
-            img = transformed["image"]
-            mask = transformed["mask"]
+            if self.fluid:
+                transformed = self.transform(image=img, mask=mask, fluid=fluid)
+                img = transformed["image"]
+                mask = transformed["mask"]
+                fluid = transformed["fluid"]
+            else:
+                transformed = self.transform(image=img, mask=mask)
+                img = transformed["image"]
+                mask = transformed["mask"]
         img = torch.from_numpy(img)
         mask = torch.from_numpy(mask)
-        return img, mask
+        if self.fluid:
+            fluid = torch.from_numpy(fluid)
+            return img, (mask, fluid)
+        else:
+            return img, mask
 
 
 class RetLSTMDataset(Dataset):

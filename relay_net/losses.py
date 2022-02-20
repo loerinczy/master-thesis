@@ -6,9 +6,12 @@ from torch import nn
 
 class DiceLoss(nn.Module):
 
-    def __init__(self, weight_channel, num_classes):
+    def __init__(self, weight_channel=None, num_classes=9):
         super(DiceLoss, self).__init__()
-        self.weight_channel = weight_channel
+        self.weight_channel = (
+            weight_channel if weight_channel
+            else torch.zeros(num_classes)
+        )
         self.num_classes = num_classes
 
     def forward(self, predictions: torch.Tensor, targets: torch.Tensor):
@@ -36,18 +39,27 @@ class CombinedLoss(nn.Module):
               self,
               num_classes=9,
               weight_channel_cross=None,
-              weight_channel_dice=1.,
+              weight_channel_dice=None,
               weight_boundary_cross=1.
     ):
         super(CombinedLoss, self).__init__()
         self.cross_entropy_loss_fn = nn.CrossEntropyLoss()
         self.dice_loss_fn = DiceLoss(weight_channel_dice, num_classes)
-        self.weight_channel_cross = weight_channel_cross
+        self.weight_channel_cross = (
+            weight_channel_cross if weight_channel_cross
+            else torch.ones(num_classes)
+        )
         self.weight_boundary_cross = weight_boundary_cross
         self.num_classes = num_classes
 
     def forward(self, predictions, targets):
+        if self.num_classes == 10:
+            targets, fluid = targets
+            fluid_boundary = get_fluid_boundary(fluid)
         weight_boundary = F.pad(targets[:, 1:, :] - targets[:, :-1, :], (0, 0, 0, 1), "constant", 0)
+        if self.num_classes == 10:
+            weight_boundary += fluid_boundary
+            targets[fluid.bool()] = 9
         weight_boundary = weight_boundary * self.weight_boundary_cross
         weight_channel = torch.zeros(*targets.shape, self.num_classes, device=targets.device).scatter_(
                   -1, targets.unsqueeze(-1), 1
