@@ -1,5 +1,5 @@
 import torch
-from utils.misc import dice_coefficient
+from utils.misc import dice_coefficient, get_fluid_boundary
 from torch.nn import functional as F
 from torch import nn
 
@@ -9,7 +9,7 @@ class DiceLoss(nn.Module):
     def __init__(self, weight_channel=None, num_classes=9):
         super(DiceLoss, self).__init__()
         self.weight_channel = (
-            weight_channel if weight_channel
+            weight_channel if weight_channel is not None
             else torch.zeros(num_classes)
         )
         self.num_classes = num_classes
@@ -46,7 +46,7 @@ class CombinedLoss(nn.Module):
         self.cross_entropy_loss_fn = nn.CrossEntropyLoss()
         self.dice_loss_fn = DiceLoss(weight_channel_dice, num_classes)
         self.weight_channel_cross = (
-            weight_channel_cross if weight_channel_cross
+            weight_channel_cross if weight_channel_cross is not None
             else torch.ones(num_classes)
         )
         self.weight_boundary_cross = weight_boundary_cross

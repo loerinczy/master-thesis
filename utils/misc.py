@@ -15,7 +15,7 @@ def dice_coefficient(prediction, target, num_classes):
     """
 
     target = get_layer_channels(target, num_classes)
-    prediction = prediction / prediction.sum(1).unsqueeze(1)
+    prediction = prediction / prediction.sum(1, keepdims=True)
     intersection = 2 * (prediction * target).sum((-1, -2))
     denominator = (prediction + target + 1e-12).sum((-1, -2))
     dice_coeff = intersection / denominator

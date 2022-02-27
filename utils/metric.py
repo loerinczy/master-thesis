@@ -34,8 +34,17 @@ def mad_lt(pred, target):
 
 
 def dice_acc(pred, target, num_classes):
-    dice = dice_coefficient(pred, target, num_classes).mean(0)
-    dice_dict = {klass: dice[klass].item() for klass in range(dice.shape[0])}
+    dice_coeff = dice_coefficient(pred, target, num_classes)
+    if num_classes == 10:
+        has_fluid = (target.view(pred.shape[0], -1) == 9).any(-1)
+        if has_fluid.any():
+            fluid_dice = dice_coeff[has_fluid, -1].mean()
+        else:
+            fluid_dice = torch.tensor(-1)
+    dice = dice_coeff[:, :9].mean(0)
+    dice_dict = {klass: dice[klass].item() for klass in range(9)}
+    if num_classes == 10:
+        dice_dict[9] = fluid_dice.item()
     return dice_dict
 
 
@@ -76,19 +85,23 @@ def sensitivity(prediction, target, num_classes):
 class Metric:
     def __init__(self, class_min, class_max):
         self.metric = {i: 0 for i in range(class_min, class_max + 1)}
-        self.counter = 0
+        self.counter = {i: 0 for i in range(class_min, class_max + 1)}
 
     def update(self, curr_metric, return_avg=False):
         for key, value in curr_metric.items():
-            self.metric[key] += value
-        self.counter += 1
+            if value != -1:
+                self.metric[key] += value
+                self.counter[key] += 1
         if return_avg:
             avg = sum(value for value in curr_metric.values()) / len(curr_metric.values())
             return avg
 
     def normalize(self):
         for key, value in self.metric.items():
-            self.metric[key] /= self.counter
+            if self.counter[key]:
+                self.metric[key] /= self.counter[key]
+            else:
+                self.metric[key] = -1
 
     def __str__(self):
         s = ""

@@ -28,8 +28,17 @@ def validate_relaynet(model: torch.nn.Module, loader: DataLoader, loss_fn, num_c
     for batch_idx, (data, target) in enumerate(loader):
         data = data.unsqueeze(1).float().to(device)
         prediction = model(data)
-        target = target.long().to(device)
+        if num_classes == 10:
+            target, fluid = target
+            target[fluid.bool()] = 9
+            target = target.long().to(device)
+            fluid = fluid.to(device)
+            target = (target, fluid)
+        else:
+            target = target.long().to(device)
         cross_loss, dice_loss = loss_fn(prediction, target)
+        if num_classes == 10:
+            target = target[0]
         cross_losses.append(cross_loss.item())
         dice_losses.append(dice_loss.item())
         prediction_mask = prediction.max(dim=1).indices
