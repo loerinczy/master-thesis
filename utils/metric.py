@@ -1,6 +1,6 @@
+import torch
 import torch.nn as nn
 from utils.misc import dice_coefficient, get_layer_channels
-
 
 def contour_error(pred, target):
     classes = range(1, 9)
@@ -60,8 +60,16 @@ def intersection_over_union(prediction, target, num_classes):
     intersection = prediction * target
     denominator = (prediction + target - intersection).sum((-1, -2))
     iou = intersection.sum((-1, -2)) / (denominator + 1e-12)
-    iou_avg = iou.mean(0)
+    if num_classes == 10:
+        has_fluid = target[:, 9].view(prediction.shape[0], -1).any(-1)
+        if has_fluid.any():
+            fluid_iou = iou[has_fluid, -1].mean()
+        else:
+            fluid_iou = torch.tensor(-1)
+    iou_avg = iou[:, :9].mean(0)
     iou_dict = {i: class_iou.item() for i, class_iou in enumerate(iou_avg)}
+    if num_classes == 10:
+        iou_dict[9] = fluid_iou.item()
     return iou_dict
 
 
@@ -77,8 +85,16 @@ def sensitivity(prediction, target, num_classes):
     intersection = (prediction * target).sum((-1, -2))
     denominator = target.sum((-1, -2))
     se = intersection / (denominator + 1e-12)
-    se_avg = se.mean(0)
+    if num_classes == 10:
+        has_fluid = target[:, 9].view(prediction.shape[0], -1).any(-1)
+        if has_fluid.any():
+            fluid_se = se[has_fluid, -1].mean()
+        else:
+            fluid_se = torch.tensor(-1)
+    se_avg = se[:, :9].mean(0)
     se_dict = {i: class_se.item() for i, class_se in enumerate(se_avg)}
+    if num_classes == 10:
+        se_dict[9] = fluid_se.item()
     return se_dict
 
 

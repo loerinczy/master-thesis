@@ -58,6 +58,7 @@ def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_leng
     if mean_std:
         img_array = img_array * mean_std[1].numpy() + mean_std[0].numpy()
         layer_array = layer_array * mean_std[3].numpy() + mean_std[2].numpy()
+        normed = True
     if normed:
         img_array = np.asarray(img_array * 255, "uint8")
         layer_array = np.asarray(layer_array * a_scan_length, "uint8")

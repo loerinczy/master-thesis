@@ -83,6 +83,7 @@ def get_loaders(
           batch_size,
           train_transform,
           num_workers,
+          shuffle_training=True
 ):
     data_dir = Path(data_dir)
     train_ds = OCTDataset(data_dir / "training" / f"DME_{patch_width}", fluid)
@@ -99,7 +100,7 @@ def get_loaders(
               train_ds,
               batch_size=batch_size,
               num_workers=num_workers,
-              shuffle=True
+              shuffle=shuffle_training
     )
     valid_loader = DataLoader(
               valid_ds,

@@ -75,6 +75,9 @@ def validate_deepretina(model: torch.nn.Module, loader: DataLoader, loss_fn, num
     for batch_idx, (data, target) in enumerate(loader):
         data = data.unsqueeze(1).float().to(device)
         prediction = model(data)
+        if num_classes == 10:
+            target, fluid = target
+            target[fluid.bool()] = 9
         target = target.long().to(device)
         loss = loss_fn(prediction, target)
         losses.append(loss.item())
