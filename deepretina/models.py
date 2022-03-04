@@ -28,7 +28,7 @@ class DepthwiseSeparableConv(nn.Module):
 
 
 class EntryFlowBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, return_skip=False):
+    def __init__(self, in_channels, out_channels):
         super(EntryFlowBlock, self).__init__()
         self.skip_conv = nn.Conv2d(in_channels, out_channels, 1, 2)
         self.layer1 = nn.Sequential(
@@ -42,47 +42,43 @@ class EntryFlowBlock(nn.Module):
                   nn.ReLU(True)
         )
         self.layer3 = nn.Sequential(
-                  DepthwiseSeparableConv(out_channels, out_channels, 3, 2, 1, False),
+                  DepthwiseSeparableConv(out_channels, out_channels, 3, 2, padding=1, bias=False),
                   nn.BatchNorm2d(out_channels),
                   nn.ReLU(True)
         )
-        self.return_skip = return_skip
 
     def forward(self, x):
         skip = x.clone()
         x = self.layer1(x)
         x = self.layer2(x)
-        hook_layer = x
         x = self.layer3(x)
         out = x + self.skip_conv(skip)
-        if self.return_skip:
-            return x, hook_layer
-        else:
-            return out
+        return out
 
 
 class EntryFlow(nn.Module):
     def __init__(self):
         super(EntryFlow, self).__init__()
         self.layer1 = nn.Sequential(
-                  nn.Conv2d(1, 32, 3, 2, padding=1, bias=False),
+                  nn.Conv2d(1, 32, 3, padding=1, bias=False),
                   nn.BatchNorm2d(32),
                   nn.ReLU(True)
         )
         self.layer2 = nn.Sequential(
-                  nn.Conv2d(32, 64, 3, 1, bias=False, padding="same"),
+                  nn.Conv2d(32, 64, 3, bias=False, padding="same"),
                   nn.BatchNorm2d(64),
                   nn.ReLU(True)
         )
         self.block1 = EntryFlowBlock(64, 128)
-        self.block2 = EntryFlowBlock(128, 256, True)
+        self.block2 = EntryFlowBlock(128, 256)
         self.block3 = EntryFlowBlock(256, 728)
 
     def forward(self, x):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.block1(x)
-        x, skip = self.block2(x)
+        x = self.block2(x)
+        skip = x.clone()
         out = self.block3(x)
         return out, skip
 
@@ -92,7 +88,8 @@ class MiddleFlowBlock(nn.Module):
         super(MiddleFlowBlock, self).__init__()
         self.module = nn.Sequential(*[
                   nn.Sequential(
-                            DepthwiseSeparableConv(728, 728, 3, 1, 1, False),
+                            DepthwiseSeparableConv(
+                                      728, 728, 3, 1, padding=1, bias=False),
                             nn.BatchNorm2d(728),
                             nn.ReLU(True)
                   ) for _ in range(3)
@@ -119,34 +116,46 @@ class MiddleFLow(nn.Module):
 class ExitFlow(nn.Module):
     def __init__(self):
         super(ExitFlow, self).__init__()
-        self.skip_conv = nn.Conv2d(728, 1024, 1, 1)
+        self.skip_conv = nn.Conv2d(728, 1024, 1, 2)
         self.layer1 = nn.Sequential(
-                  DepthwiseSeparableConv(728, 1024, 3, 1, 1, False),
+                  DepthwiseSeparableConv(
+                            728, 1024, 3, 1, padding=1, bias=False
+                  ),
                   nn.BatchNorm2d(1024),
                   nn.ReLU(True)
         )
         self.layer2 = nn.Sequential(
-                  DepthwiseSeparableConv(1024, 1024, 3, 1, 1, False),
+                  DepthwiseSeparableConv(
+                            1024, 1024, 3, 1, padding=1, bias=False
+                  ),
                   nn.BatchNorm2d(1024),
                   nn.ReLU(True)
         )
         self.layer3 = nn.Sequential(
-                  DepthwiseSeparableConv(1024, 1024, 3, 1, 1, False),
+                  DepthwiseSeparableConv(
+                            1024, 1024, 3, 2, padding=1, bias=False
+                  ),
                   nn.BatchNorm2d(1024),
                   nn.ReLU(True)
         )
         self.layer4 = nn.Sequential(
-                  DepthwiseSeparableConv(1024, 1536, 3, 1, 1, False),
+                  DepthwiseSeparableConv(
+                            1024, 1536, 3, 1, padding=1, bias=False
+                  ),
                   nn.BatchNorm2d(1536),
                   nn.ReLU(True)
         )
         self.layer5 = nn.Sequential(
-                  DepthwiseSeparableConv(1536, 1536, 3, 1, 1, False),
+                  DepthwiseSeparableConv(
+                            1536, 1536, 3, 1, padding=1, bias=False
+                  ),
                   nn.BatchNorm2d(1536),
                   nn.ReLU(True)
         )
         self.layer6 = nn.Sequential(
-                  DepthwiseSeparableConv(1536, 2048, 3, 1, 1, False),
+                  DepthwiseSeparableConv(
+                            1536, 2048, 3, 1, padding=1, bias=False
+                  ),
                   nn.BatchNorm2d(2048),
                   nn.ReLU(True)
         )
@@ -259,21 +268,6 @@ class DeepRetina(nn.Module):
 
 
 # if __name__ == "__main__":
-#     from data import OCTDataset
-#     from losses import FocalLoss
-#
-#     alpha = 1.
-#     gamma = 1.
-#     ds = OCTDataset("../../generated/DME_64")
-#     loss_fn = FocalLoss(alpha=alpha, gamma=gamma)
-#     model = DeepRetina(9)
-#     x, y = ds[0]
-#     x, y = x.unsqueeze(0).unsqueeze(0).float(), y.unsqueeze(0).long()
-#     opt = torch.optim.Adam(model.parameters(), lr=3e-4)
-#     for idx in range(100):
-#         opt.zero_grad()
-#         pred = model(x)
-#         loss = loss_fn(pred, y)
-#         loss.backward()
-#         opt.step()
-#         print(f"\r Step {idx} - Loss {loss.item()}", end="")
+#     model = DeepRetina(10)
+#     x = torch.randn(1, 1, 64, 496)
+#     print(model(x).shape)
