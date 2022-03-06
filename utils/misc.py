@@ -4,6 +4,9 @@ from utils.data import OCTDataset, RetLSTMDataset
 from torch.utils.data import DataLoader, Subset
 import albumentations as A
 from pathlib import Path
+import traceback
+import pandas as pd
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 
 def dice_coefficient(prediction, target, num_classes):
@@ -157,43 +160,24 @@ def denormalize(t, mean_std, max_val):
     return t
 
 
-
-# Deprecated functions
-
-# def get_mean_std_retlstm(loader):
-#     x, y = next(iter(loader))
-#     x_mean = torch.zeros((x.shape[-1],))
-#     x_square_mean = torch.zeros((x.shape[-1],))
-#     y_mean = torch.zeros((y.shape[-1],))
-#     y_square_mean = torch.zeros((y.shape[-1],))
-#     num_a_scans = 0
-#     for x, y in loader:
-#         x_mean += x.sum((0, 1))
-#         x_square_mean += (x**2).sum((0, 1))
-#         y_mean += y.sum((0, 1))
-#         y_square_mean += (y**2).sum((0, 1))
-#         num_a_scans += x.shape[1] * x.shape[0]
-#
-#     x_mean /= num_a_scans
-#     x_square_mean /= num_a_scans
-#     y_mean /= num_a_scans
-#     y_square_mean /= num_a_scans
-#     x_std = (x_square_mean - x_mean**2).abs().sqrt()
-#     y_std = (y_square_mean - y_mean**2).abs().sqrt()
-#     return x_mean, x_std, y_mean, y_std
-
-# def normalize(x, y, x_mean, x_std, y_mean, y_std):
-#     x_mean = torch.tile(x_mean, (x.shape[0], x.shape[1], 1))
-#     x_std = torch.tile(x_std, (x.shape[0], x.shape[1], 1))
-#     y_mean = torch.tile(y_mean, (x.shape[0], x.shape[1], 1))
-#     y_std = torch.tile(y_std, (x.shape[0], x.shape[1], 1))
-#     x_normalized = (x - x_mean) / x_std
-#     y_normalized = (y - y_mean) / y_std
-#     return x_normalized, y_normalized
-
-# @torch.no_grad()
-# def denormalize(y, y_mean, y_std):
-#     y_mean = torch.tile(y_mean, (y.shape[0], y.shape[1], 1))
-#     y_std = torch.tile(y_std, (y.shape[0], y.shape[1], 1))
-#     y = (y * y_std.to(y.device) + y_mean.to(y.device))
-#     return y
+def tflog2pandas(path):
+    """Function implemented by Adnan Ali
+       source: https://stackoverflow.com/questions/71239557/export-tensorboard-with-pytorch-data-into-csv-with-python
+    """
+    runlog_data = pd.DataFrame({"metric": [], "value": [], "step": []})
+    try:
+        event_acc = EventAccumulator(path)
+        event_acc.Reload()
+        tags = event_acc.Tags()["scalars"]
+        for tag in tags:
+            event_list = event_acc.Scalars(tag)
+            values = list(map(lambda x: x.value, event_list))
+            step = list(map(lambda x: x.step, event_list))
+            r = {"metric": [tag] * len(step), "value": values, "step": step}
+            r = pd.DataFrame(r)
+            runlog_data = pd.concat([runlog_data, r])
+    # Dirty catch of DataLossError
+    except Exception:
+        print("Event file possibly corrupt: {}".format(path))
+        traceback.print_exc()
+    return runlog_data
