@@ -28,10 +28,10 @@ class RetLSTM(nn.Module):
         return prediction
 
 
-class OnlyConvModel(nn.Module):
+class OnlyConvModelCC(nn.Module):
 
   def __init__(self, conv, a_scan_length=496):
-    super(OnlyConvModel, self).__init__()
+    super(OnlyConvModelCC, self).__init__()
     self.a_scan_length = a_scan_length
     self.conv = conv
     coord = torch.arange(self.a_scan_length)
@@ -45,27 +45,60 @@ class OnlyConvModel(nn.Module):
       return out
 
 
-def get_ConvModule(n_layers, kernel_size, stride, out_features, a_scan_length=496):
-  ml = []
-  n_channels = 2**(n_layers)
-  in_features = a_scan_length
-  ml.append(
+def get_ConvModuleCC(n_layers, kernel_size, stride, out_features, a_scan_length=496):
+    ml = []
+    n_channels = 2**(n_layers)
+    in_features = (a_scan_length - kernel_size) // stride + 1
+    ml.append(
     nn.Conv1d(
         in_channels=2,
         out_channels=2,
-        kernel_size=1,
-    ))
-  ml.append(nn.ReLU(True))
-  for layer_idx in range(n_layers - 1):
-    ml.append(
-      nn.Conv1d(
-        in_channels=2**(layer_idx+1),
-        out_channels=2**(layer_idx + 2),
         kernel_size=kernel_size,
-        stride=2
+        stride=stride
     ))
     ml.append(nn.ReLU(True))
-    in_features = (in_features - kernel_size) // stride + 1
-  ml.append(nn.Flatten(start_dim=1))
-  ml.append(nn.Linear(n_channels * in_features, out_features))
-  return nn.Sequential(*ml)
+    for layer_idx in range(n_layers - 1):
+        ml.append(
+          nn.Conv1d(
+            in_channels=2**(layer_idx+1),
+            out_channels=2**(layer_idx + 2),
+            kernel_size=kernel_size,
+            stride=stride
+        ))
+        ml.append(nn.ReLU(True))
+        in_features = (in_features - kernel_size) // stride + 1
+    ml.append(nn.Flatten(start_dim=1))
+    ml.append(nn.Linear(n_channels * in_features, out_features))
+    return nn.Sequential(*ml)
+
+
+class OnlyConvModelNCC(nn.Module):
+
+    def __init__(self, conv, a_scan_length=496):
+        super(OnlyConvModelNCC, self).__init__()
+        self.a_scan_length = a_scan_length
+        self.conv = conv
+
+    def forward(self, seq):
+      seq = seq.unsqueeze(2)
+      out = torch.cat([self.conv(x_in).unsqueeze(0) for x_in in seq], dim=0)
+      return out
+
+
+def get_ConvModuleNCC(n_layers, kernel_size, stride, out_features, a_scan_length=496):
+    ml = []
+    n_channels = 2**(n_layers)
+    in_features = a_scan_length
+    for layer_idx in range(n_layers):
+        ml.append(
+          nn.Conv1d(
+            in_channels=2**(layer_idx),
+            out_channels=2**(layer_idx + 1),
+            kernel_size=kernel_size,
+            stride=stride
+        ))
+        ml.append(nn.ReLU(True))
+        in_features = (in_features - kernel_size) // stride + 1
+    ml.append(nn.Flatten(start_dim=1))
+    ml.append(nn.Linear(n_channels * in_features, out_features))
+    return nn.Sequential(*ml)
