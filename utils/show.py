@@ -2,6 +2,18 @@ import numpy as np
 import torch
 from PIL import Image
 
+colorcode = {
+    1: (359, 5, 10),
+    2: (328, 90, 5),
+    3: (118, 58, 69),
+    4: (292, 52, 80),
+    5: (30, 20, 10),
+    6: (60, 10, 5),
+    7: (22, 76, 100),
+    9: (220, 80, 60)  # fluid
+}
+
+colorcode = {key: (np.array(value) * np.array([255 / 359, 255, 255])).astype(int) for key, value in colorcode.items()}
 
 def show_layers_from_mask(img, mask, mean_std=None, normed=False):
     err_msg = "image and mask do not have the same dimensions"
@@ -15,22 +27,12 @@ def show_layers_from_mask(img, mask, mean_std=None, normed=False):
         normed = True
     if normed:
         img = np.asarray(img * 255, "uint8")
-    dme_colorcode = {
-        1: (170, 160, 250),
-        2: (120, 200, 250),
-        3: (80, 200, 250),
-        4: (50, 230, 250),
-        5: (20, 230, 250),
-        6: (0, 230, 250),
-        7: (0, 230, 100),
-        9: (180, 255, 255)  # fluid
-    }
     zeros = np.zeros_like(mask, dtype="uint8")
     hue = zeros.copy()
     saturation = zeros.copy()
     value = zeros.copy()
     alpha = zeros.copy()
-    for klass, hsv in dme_colorcode.items():
+    for klass, hsv in colorcode.items():
         hue[mask == klass] = hsv[0]
         saturation[mask == klass] = hsv[1]
         value[mask == klass] = hsv[2]
@@ -62,20 +64,6 @@ def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_leng
     if normed:
         img_array = np.asarray(img_array * 255, "uint8")
         layer_array = np.asarray(layer_array * a_scan_length, "uint8")
-    dme_colorcode = {
-        1: (170, 160, 250),
-        2: (120, 200, 250),
-        3: (80, 200, 250),
-        4: (50, 230, 250),
-        5: (20, 230, 250),
-        6: (0, 230, 250),
-        7: (0, 230, 100),
-        8: (180, 255, 255)  # fluid
-    }
-    amd_colorcode = {
-        1: (180, 200, 250),
-        2: (120, 200, 250),
-    }
     zeros = np.zeros_like(img_array, dtype="uint8")
     hue = np.zeros_like(img_array, dtype="uint8")
     saturation = np.zeros_like(img_array, dtype="uint8")
@@ -90,14 +78,9 @@ def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_leng
                 mask[last_boundary:curr_boundary, w] = idx + 1
                 last_boundary = curr_boundary
     if fluid is not None:
-        mask[fluid != 0] = 8
+        mask[fluid != 0] = 9
     if layer_array.shape[1] == 8:
-        for klass, hsv in dme_colorcode.items():
-            hue[mask == klass] = hsv[0]
-            saturation[mask == klass] = hsv[1]
-            value[mask == klass] = hsv[2]
-    if layer_array.shape[1] == 3:
-        for klass, hsv in amd_colorcode.items():
+        for klass, hsv in colorcode.items():
             hue[mask == klass] = hsv[0]
             saturation[mask == klass] = hsv[1]
             value[mask == klass] = hsv[2]

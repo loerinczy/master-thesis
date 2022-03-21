@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 from utils.misc import dice_coefficient, get_layer_channels
 
+
 def contour_error(pred, target):
     classes = range(1, 9)
     ce_dict = {}
-    mse_fn = nn.MSELoss()
     for klass in classes:
         pred_mask = (pred == klass).int()
         pred_diff = (pred_mask[:, 1:] - pred_mask[:, :-1])
@@ -13,8 +13,8 @@ def contour_error(pred, target):
         target_mask = (target == klass).int()
         target_diff = target_mask[:, 1:] - target_mask[:, :-1]
         target_idx = target_diff.max(1).indices
-        mse = mse_fn(pred_idx.float(), target_idx.float())
-        ce_dict[klass] = mse.sqrt().item()
+        mad = (pred_idx.float() - target_idx.float()).abs()
+        ce_dict[klass] = mad.mean().item()
     return ce_dict
 
 
