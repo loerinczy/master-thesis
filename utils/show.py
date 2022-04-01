@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-colorcode = {
+colourcode = {
     1: (359, 5, 10),
     2: (328, 90, 5),
     3: (118, 58, 69),
@@ -13,7 +13,7 @@ colorcode = {
     9: (220, 80, 60)  # fluid
 }
 
-colorcode = {key: (np.array(value) * np.array([255 / 359, 255, 255])).astype(int) for key, value in colorcode.items()}
+colourcode = {key: (np.array(value) * np.array([255 / 359, 255, 255])).astype(int) for key, value in colourcode.items()}
 
 def show_layers_from_mask(img, mask, mean_std=None, normed=False):
     err_msg = "image and mask do not have the same dimensions"
@@ -32,7 +32,7 @@ def show_layers_from_mask(img, mask, mean_std=None, normed=False):
     saturation = zeros.copy()
     value = zeros.copy()
     alpha = zeros.copy()
-    for klass, hsv in colorcode.items():
+    for klass, hsv in colourcode.items():
         hue[mask == klass] = hsv[0]
         saturation[mask == klass] = hsv[1]
         value[mask == klass] = hsv[2]
@@ -63,7 +63,7 @@ def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_leng
         normed = True
     if normed:
         img_array = np.asarray(img_array * 255, "uint8")
-        layer_array = np.asarray(layer_array * a_scan_length, "uint8")
+        layer_array *= a_scan_length
     zeros = np.zeros_like(img_array, dtype="uint8")
     hue = np.zeros_like(img_array, dtype="uint8")
     saturation = np.zeros_like(img_array, dtype="uint8")
@@ -80,7 +80,7 @@ def show_layers_from_boundary(img_array, layer_array, mean_std=None, a_scan_leng
     if fluid is not None:
         mask[fluid != 0] = 9
     if layer_array.shape[1] == 8:
-        for klass, hsv in colorcode.items():
+        for klass, hsv in colourcode.items():
             hue[mask == klass] = hsv[0]
             saturation[mask == klass] = hsv[1]
             value[mask == klass] = hsv[2]

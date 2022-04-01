@@ -47,7 +47,7 @@ class DecoderBlock(nn.Module):
 
 
 class RelayNet(nn.Module):
-    def __init__(self, num_classes=9):
+    def __init__(self, num_classes=9, initialize=True):
         super(RelayNet, self).__init__()
         self.encoder = nn.ModuleList(
                   [
@@ -72,7 +72,8 @@ class RelayNet(nn.Module):
                   ]
         )
         self.classifier = nn.Conv2d(64, num_classes, kernel_size=1)
-        self.initialize()
+        if initialize:
+            self.initialize()
 
     def initialize(self):
         for module in self.modules():

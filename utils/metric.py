@@ -3,32 +3,40 @@ import torch.nn as nn
 from utils.misc import dice_coefficient, get_layer_channels
 
 
-def contour_error(pred, target):
+def contour_error(pred, target, use_lyr):
     classes = range(1, 9)
     ce_dict = {}
     for klass in classes:
         pred_mask = (pred == klass).int()
         pred_diff = (pred_mask[:, 1:] - pred_mask[:, :-1])
         pred_idx = pred_diff.max(1).indices
-        target_mask = (target == klass).int()
-        target_diff = target_mask[:, 1:] - target_mask[:, :-1]
-        target_idx = target_diff.max(1).indices
-        mad = (pred_idx.float() - target_idx.float()).abs()
+        if use_lyr:
+            mad = (pred_idx.float() - target[:, klass - 1]).abs()
+            mad = mad[~mad.isnan()]
+        else:
+            target_mask = (target == klass).int()
+            target_diff = target_mask[:, 1:] - target_mask[:, :-1]
+            target_idx = target_diff.max(1).indices
+            mad = (pred_idx.float() - target_idx.float()).abs()
         ce_dict[klass] = mad.mean().item()
     return ce_dict
 
 
-def mad_lt(pred, target):
+def mad_lt(pred, target, use_lyr):
     classes = range(1, 8)
     mad_dict = {}
     for klass in classes:
         pred_mask = (pred == klass).int()
         pred_diff = pred_mask[:, 1:] - pred_mask[:, :-1]
         pred_widths = pred_diff.shape[1] - 1 - pred_diff.flip(1).min(1).indices - pred_diff.max(1).indices
-        target_mask = (target == klass).int()
-        target_diff = target_mask[:, 1:] - target_mask[:, :-1]
-        target_widths = target_diff.shape[1] - 1 - target_diff.flip(1).min(1).indices - target_diff.max(1).indices
-        mad = (pred_widths - target_widths).abs().float().mean()
+        if use_lyr:
+            target_widths = target[:, klass] - target[:, klass-1]
+        else:
+            target_mask = (target == klass).int()
+            target_diff = target_mask[:, 1:] - target_mask[:, :-1]
+            target_widths = target_diff.shape[1] - 1 - target_diff.flip(1).min(1).indices - target_diff.max(1).indices
+        mad = (pred_widths - target_widths).abs().float()
+        mad = mad[~mad.isnan()].mean()
         mad_dict[klass] = mad.item()
     return mad_dict
 

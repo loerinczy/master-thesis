@@ -13,7 +13,7 @@ from scipy.io import loadmat
 # Dataset
 class OCTDataset(Dataset):
 
-    def __init__(self, data_dir, fluid, transform=None):
+    def __init__(self, data_dir, fluid, transform=None, use_lyr=True):
         assert Path(
             data_dir
             ).exists(), f"The directory {data_dir} does not exists!"
@@ -23,8 +23,10 @@ class OCTDataset(Dataset):
         self.image_name = lambda idx: f"img_{idx}.png"
         self.mask_name = lambda idx: f"mask_{idx}.png"
         self.fluid_name = lambda idx: f"fluid_{idx}.png"
+        self.lyr_name = lambda idx: f"lyr_{idx}.pkl"
         self.transform = transform
         self.fluid = fluid
+        self.use_lyr = use_lyr
 
     def __len__(self):
         return self.len
@@ -33,13 +35,21 @@ class OCTDataset(Dataset):
         img_file = self.data_dir / self.image_name(idx)
         mask_file = self.data_dir / self.mask_name(idx)
         fluid_file = self.data_dir / self.fluid_name(idx)
+        lyr_file = self.data_dir / self.lyr_name(idx)
         img = np.array(Image.open(img_file), dtype=float)
         img /= 255
         mask = np.array(Image.open(mask_file))
         fluid = np.array(Image.open(fluid_file))
+        lyr = torch.load(lyr_file).numpy()
         if self.transform is not None:
             if self.fluid:
-                transformed = self.transform(image=img, mask=mask, fluid=fluid)
+                if self.use_lyr:
+                    transformed = self.transform(
+                              image=img, mask=mask, fluid=fluid, lyr=lyr
+                    )
+                    lyr = transformed["lyr"]
+                else:
+                    transformed = self.transform(image=img, mask=mask, fluid=fluid)
                 img = transformed["image"]
                 mask = transformed["mask"]
                 fluid = transformed["fluid"]
@@ -51,18 +61,20 @@ class OCTDataset(Dataset):
         mask = torch.from_numpy(mask)
         if self.fluid:
             fluid = torch.from_numpy(fluid)
-            return img, (mask, fluid)
+            lyr = torch.from_numpy(lyr)
+            return img, (mask, fluid, lyr)
         else:
             return img, mask
 
 
 class RetLSTMDataset(Dataset):
-    def __init__(self, root: str, transform=None):
+    def __init__(self, root: str, transform=None, return_mask=False):
         self.root = Path(root)
         self.img = lambda idx: f"img_{idx}.png"
+        self.lyr = lambda idx: f"lyr_{idx}.pkl"
         self.transform = transform
-        with open(self.root / "boundary_indices.json", "r") as bfile:
-            self.boundary_dict = json.load(bfile)
+        self.return_mask = return_mask
+        self.mask = lambda idx: f"mask_{idx}.png"
 
     def __len__(self):
         return len(list(self.root.glob("img_*")))
@@ -71,20 +83,25 @@ class RetLSTMDataset(Dataset):
         img_path = self.root / self.img(idx)
         img = np.array(Image.open(img_path), dtype=float)
         img /= 255
-        boundary_indices = self.boundary_dict[str(idx)]
-        boundary_indices = np.array(boundary_indices, dtype=float)
-        boundary_indices /= img.shape[-2]
+        lyr = torch.load(self.root / self.lyr(idx))
+        lyr = lyr.numpy()
+        lyr /= img.shape[-2]
+        if self.return_mask:
+            mask_path = self.root / self.mask(idx)
+            mask = np.array(Image.open(mask_path))
         if self.transform:
             img = self.transform[0][0](image=img)["image"]
-            boundary_indices = self.transform[0][1](image=boundary_indices)["image"]
+            lyr = self.transform[0][1](image=lyr)["image"]
             if self.transform[1]:
-                boundary_indices = boundary_indices.T
-                transformed = self.transform(image=img, mask=boundary_indices)
+                transformed = self.transform(image=img, mask=lyr)
                 img = transformed["image"]
-                boundary_indices = transformed["mask"].T
+                lyr = transformed["mask"]
         img = torch.from_numpy(img).T
-        boundary_indices = torch.from_numpy(boundary_indices)
-        return img, boundary_indices
+        lyr = torch.from_numpy(lyr).T
+        if self.return_mask:
+            mask = torch.from_numpy(mask)
+            return img, lyr, mask
+        return img, lyr
 
 
 def create_patches(img, lyr, patch_width):

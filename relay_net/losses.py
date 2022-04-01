@@ -26,6 +26,7 @@ class DiceLoss(nn.Module):
         :return: the dice loss summed over the channels, averaged over the batch
         """
         predictions_exp = predictions.exp()
+        predictions_exp = predictions_exp / predictions_exp.sum(1, keepdims=True)
         dice_coeff = dice_coefficient(predictions_exp, targets, self.num_classes).mean(0)
         weight = 1 + self.weight_channel
         weight /= weight.sum()
@@ -57,8 +58,9 @@ class CombinedLoss(nn.Module):
             targets, fluid = targets
             fluid_boundary = get_fluid_boundary(fluid)
         weight_boundary = F.pad(targets[:, 1:, :] - targets[:, :-1, :], (0, 0, 0, 1), "constant", 0)
+        weight_boundary[weight_boundary != 1] = 0
         if self.num_classes == 10:
-            weight_boundary += fluid_boundary
+            weight_boundary = torch.logical_or(weight_boundary, fluid_boundary)
             targets[fluid.bool()] = 9
         weight_boundary = weight_boundary * self.weight_boundary_cross
         weight_channel = torch.zeros(*targets.shape, self.num_classes, device=targets.device).scatter_(
@@ -67,7 +69,7 @@ class CombinedLoss(nn.Module):
         weight_channel = weight_channel * self.weight_channel_cross
         weight_channel = weight_channel.max(-1).values
         weight = 1 + weight_boundary + weight_channel
-        weight /= weight.sum()
+        # weight /= weight.sum()
         cross_entropy_loss = (self.cross_entropy_loss_fn(predictions, targets) * weight).sum()
         dice_loss = self.dice_loss_fn(predictions, targets)
         return cross_entropy_loss, dice_loss

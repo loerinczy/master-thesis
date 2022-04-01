@@ -3,7 +3,7 @@ from torch import nn
 
 
 class RetLSTM(nn.Module):
-    def __init__(self, conv, fc, hidden_size, a_scan_length=496):
+    def __init__(self, conv, fc, hidden_size, cc=False, a_scan_length=496):
         super(RetLSTM, self).__init__()
         self.a_scan_length = a_scan_length
         self.conv = conv
@@ -15,10 +15,14 @@ class RetLSTM(nn.Module):
         coord = torch.arange(self.a_scan_length)
         coord = (coord - self.a_scan_length / 2) / (self.a_scan_length / 2)
         self.register_buffer("coord", coord)
+        self.cc = cc
 
     def forward(self, seq):
-        coord = torch.tile(self.coord, dims=(*seq.shape[:2], 1)).unsqueeze(2)
-        seq = torch.cat([seq.unsqueeze(2), coord], dim=2)
+        if self.cc:
+            coord = torch.tile(self.coord, dims=(*seq.shape[:2], 1)).unsqueeze(2)
+            seq = torch.cat([seq.unsqueeze(2), coord], dim=2)
+        else:
+            seq = seq.unsqueeze(2)
         seq = torch.cat([self.conv(x_in).unsqueeze(0) for x_in in seq], dim=0)
         out, _ = self.lstm(seq.squeeze(2))
         prediction = torch.cat([self.fc(x_out).unsqueeze(0) for x_out in out], dim=0)
