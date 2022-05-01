@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import torch
 from utils.data import OCTDataset, RetLSTMDataset
 from torch.utils.data import DataLoader, Subset
@@ -6,6 +7,9 @@ import albumentations as A
 from pathlib import Path
 import traceback
 import pandas as pd
+import subprocess
+from torch import nn
+import pickle
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 
@@ -57,18 +61,21 @@ def get_fluid_boundary(fluid):
 def get_mean_std(ds, retlstm=False):
     x_mean = 0
     x_square_mean = 0
+    num_pixels = 0
     if retlstm:
         y_mean = 0
         y_square_mean = 0
-    for x, y in ds:
-        x_mean += x.sum()
-        x_square_mean += (x**2).sum()
+    for x, y, corner in ds:
+        x_not_corner = x[corner != 1]
+        x_mean += x_not_corner.sum()
+        x_square_mean += (x_not_corner**2).sum()
         if retlstm:
             y = y[~y.isnan()]
             y_mean += y.sum()
             y_square_mean += (y**2).sum()
-    x_mean /= len(ds) * np.prod(x.shape)
-    x_square_mean /= len(ds) * np.prod(x.shape)
+        num_pixels += len(x_not_corner)
+    x_mean /= num_pixels
+    x_square_mean /= num_pixels
     if retlstm:
         y_mean /= len(ds) * np.prod(y.shape)
         y_square_mean /= len(ds) * np.prod(y.shape)
@@ -119,18 +126,45 @@ def get_loaders_retlstm(
           patch_width,
           batch_size,
           train_transform,
-          num_workers,
+          normalize_img=True,
+          normalize_lyr=True,
+          standardize=False,
+          boundary_center=False,
+          num_workers=2,
 ):
     data_dir = Path(data_dir)
-    train_ds = RetLSTMDataset(data_dir / "training" / f"DME_{patch_width}")
+    train_ds = RetLSTMDataset(
+              data_dir / "training" / f"DME_{patch_width}",
+              normalize_img=normalize_img,
+              normalize_lyr=normalize_lyr
+    )
     mean_std = get_mean_std(Subset(train_ds, range(len(train_ds))), retlstm=True)
-    norm = [
-        A.Normalize((mean_std[0],), (mean_std[1],), max_pixel_value=1., always_apply=True),
-        A.Normalize((mean_std[2],), (mean_std[3],), max_pixel_value=1., always_apply=True)
-    ]
-    train_ds = RetLSTMDataset(data_dir / "training" / f"DME_{patch_width}", transform=(norm, train_transform))
-    valid_ds = RetLSTMDataset(data_dir / "validation" / f"DME_{patch_width}", transform=(norm, None), return_mask=True)
-
+    if standardize:
+        if boundary_center:
+            mean_std = list(mean_std)
+            mean_std[2] = 0.5
+        stand = [
+            A.Normalize((mean_std[0],), (mean_std[1],), max_pixel_value=1., always_apply=True),
+            A.Normalize((mean_std[2],), (mean_std[3],), max_pixel_value=1., always_apply=True)
+        ]
+        train_ds_transf = (stand, train_transform)
+        valid_ds_transf = (stand, train_transform)
+    else:
+        train_ds_transf = (None, train_transform)
+        valid_ds_transf = (None, train_transform)
+    train_ds = RetLSTMDataset(
+              data_dir / "training" / f"DME_{patch_width}",
+              normalize_img=normalize_img,
+              normalize_lyr=normalize_lyr,
+              transform=train_ds_transf,
+    )
+    valid_ds = RetLSTMDataset(
+              data_dir / "validation" / f"DME_{patch_width}",
+              normalize_img=normalize_img,
+              normalize_lyr=normalize_lyr,
+              transform=valid_ds_transf,
+              return_mask=True
+    )
     train_loader = DataLoader(
               train_ds,
               batch_size=batch_size,
@@ -181,3 +215,120 @@ def tflog2pandas(path):
         print("Event file possibly corrupt: {}".format(path))
         traceback.print_exc()
     return runlog_data
+
+
+def functioning(model):
+    x = torch.randn(64, 2, 496)
+    out = model(x)
+    return out.shape == (64, 2, 8)
+
+
+def ls_models():
+    ls = subprocess.run(["ls", "rec_models"], stdout=subprocess.PIPE)
+    print(ls.stdout.decode("utf-8"))
+
+
+def knormal(model):
+    for m in model.modules():
+        if (
+                  isinstance(m, nn.Conv1d)
+                  or isinstance(m, nn.Conv2d)
+                  or isinstance(m, nn.Linear)
+        ):
+            nn.init.kaiming_normal_(
+                      m.weight,
+                      nonlinearity="linear" if isinstance(m, nn.Linear) else "relu"
+            )
+            nn.init.constant_(m.bias, 0)
+
+
+def orig_init(model):
+    for m in model.modules():
+        if (
+                  isinstance(m, nn.Linear)
+                  or isinstance(m, nn.Conv1d)
+                  or isinstance(m, nn.Conv2d)
+        ):
+            m.reset_parameters()
+
+
+def kuni(model):
+    for m in model.modules():
+        if (
+                  isinstance(m, nn.Conv1d)
+                  or isinstance(m, nn.Conv2d)
+                  or isinstance(m, nn.Linear)
+        ):
+            nn.init.kaiming_uniform_(
+                      m.weight,
+                      nonlinearity="linear" if isinstance(m, nn.Linear) else "relu"
+            )
+            nn.init.constant_(m.bias, 0)
+
+
+def initialize(model, method="def"):
+    if method == "def":
+        orig_init(model)
+    elif method == "knormal":
+        knormal(model)
+    elif method == "kuni":
+        kuni(model)
+    else:
+        raise Exception("Error! Unknown method!")
+
+
+
+
+
+def send_model(model, fname, init="uni"):
+    torch.manual_seed(0)
+    torch.cuda.manual_seed(0)
+    np.random.seed(0)
+    if init == "uni":
+        initialize(model)
+    elif init == "normal":
+        init_knormal(model)
+    elif init == "def":
+        orig_init(model)
+    else:
+        raise TypeError("ERROR! UNKNOWN init")
+    assert functioning(model), "model not functioning!"
+    comp(model)
+    with open(f"{fname}.pkl", "wb") as file:
+        pickle.dump(model, file)
+    subprocess.run(["sendm", fname], stdout=subprocess.PIPE)
+    subprocess.run(["rm", f"{fname}.pkl"])
+    print("model sent")
+
+
+def get_and_load_model(fname):
+    subprocess.run(["getm", fname], stdout=subprocess.PIPE)
+    with open(f"rec_models/{fname}.pkl", "rb") as file:
+        model = pickle.load(file)
+    return model
+
+
+def load_model(fname):
+    with open(f"rec_models/{fname}.pkl", "rb") as file:
+        model = pickle.load(file)
+    return model
+
+
+def comp(model):
+    print(sum(p.numel() for p in model.parameters()))
+
+
+def get_and_load_ckp(model, path, epoch):
+    subprocess.run(
+              [
+                  "to", f"{os.getenv('CKPS')}/{path}/epoch_{epoch}.pth", "."
+              ]
+    )
+    model.load_state_dict(
+              torch.load(
+                        f"epoch_{epoch}.pth",
+                        map_location=torch.device('cpu')
+              )
+    )
+    print(">> checkpoint loaded")
+    subprocess.run(["rm", f"epoch_{epoch}.pth"])

@@ -5,7 +5,7 @@ from utils.misc import get_layer_channels, get_layer_mask_from_boundaries
 from utils.metric import (
     Metric, dice_acc, contour_error, sensitivity, intersection_over_union, mad_lt
 )
-
+from torch.cuda.amp import autocast
 
 @torch.no_grad()
 def validate_relaynet(model: torch.nn.Module, loader: DataLoader, loss_fn, num_classes, use_lyr=True):
@@ -103,6 +103,9 @@ def validate_retlstm(
           model: torch.nn.Module,
           loader: DataLoader,
           loss_fn,
+          normalize_lyr,
+          standardize,
+          loss_weight,
           mean_std: list,
           num_classes: int,
           a_scan_length: int=496,
@@ -123,17 +126,28 @@ def validate_retlstm(
     mad = Metric(1, num_classes - 2)
     dice = Metric(0, 9)
     losses = []
-    for batch_idx, (data, target, mask) in enumerate(loader):
-        data, target = (
-            data.swapaxes(0, 1).to(device),
-            target.swapaxes(0, 1).to(device),
+    for batch_idx, (data, target, corner, mask) in enumerate(loader):
+        data, target, corner = (
+            data.swapaxes(0, 1).to(device).float(),
+            target.swapaxes(0, 1).to(device).float(),
+            corner.swapaxes(0, 1).to(device)
         )
         mask = mask.to(device)
-        prediction = model(data)
-        loss = loss_fn(prediction[~target.isnan()], target[~target.isnan()])
+        with autocast():
+            data[corner != 0] = 0
+            prediction = model(data)
+            lw = loss_weight.expand_as(target)[~target.isnan()]
+            loss = (
+                      loss_fn(prediction[~target.isnan()], target[~target.isnan()])
+                      * lw
+            ).mean()
         losses.append(loss.item())
-        prediction = (prediction * mean_std[3] + mean_std[2]) * a_scan_length
-        target = (target * mean_std[3] + mean_std[2]) * a_scan_length
+        if standardize:
+            prediction = (prediction * mean_std[3] + mean_std[2])
+            target = (target * mean_std[3] + mean_std[2])
+        if normalize_lyr:
+            prediction *= a_scan_length
+            target *= a_scan_length
         mae = (target - prediction).abs()
         ce_batch = {}
         for klass in range(0, num_classes - 1):

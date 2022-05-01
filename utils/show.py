@@ -114,3 +114,77 @@ def show_prediction(model, data, target, mean_std, standardized=False, colab=Tru
     else:
         img_pred.show()
         img_target.show()
+
+
+def show_boundary(
+    img_array,
+    layer_array,
+    mean_std=None,
+    a_scan_length=496,
+    normed=False,
+    a=1.,
+    hsv=()
+):
+    if len(img_array.shape) == 3:
+        img_array.squeeze_()
+    if len(layer_array.shape) == 3:
+        layer_array.squeeze_()
+    if img_array.shape[1] != layer_array.shape[1]:
+        img_array = img_array.T
+        layer_array = layer_array.T
+    assert img_array.shape[1] == layer_array.shape[1], "error with shapes"
+    if type(img_array) == torch.Tensor:
+        img_array = img_array.detach().cpu().numpy()
+    if type(layer_array) == torch.Tensor:
+        layer_array = layer_array.detach().cpu().numpy()
+    if mean_std:
+        img_array = img_array * mean_std[1].numpy() + mean_std[0].numpy()
+        layer_array = layer_array * mean_std[3].numpy() + mean_std[2].numpy()
+        normed = True
+    if normed:
+        img_array = np.asarray(img_array * 255, "uint8")
+        layer_array *= a_scan_length
+    layer_array = layer_array.astype("uint8")
+    zeros = np.zeros_like(img_array, dtype="uint8")
+    alpha = np.zeros_like(img_array, dtype="uint8")
+    index = np.tile(np.arange(a_scan_length), (img_array.shape[1], 1)).T
+    for i in layer_array:
+        alpha[index == i] = int(255 * a)
+    img_stack = np.array([zeros, zeros, img_array]).transpose((1, 2, 0))
+    img = Image.fromarray(img_stack, mode="HSV")
+    hue = np.ones_like(img_array, dtype="uint8") * hsv[0]
+    value = np.ones_like(img_array, dtype="uint8") * hsv[1]
+    saturation = np.ones_like(img_array, dtype="uint8") * hsv[2]
+    colored_mask_stack = np.array([hue, saturation, value]).transpose((1, 2, 0))
+    colored_mask = Image.fromarray(colored_mask_stack, mode="HSV")
+    alphaimg = Image.fromarray(alpha)
+    img_with_boundaries = Image.composite(colored_mask, img, alphaimg)
+    return img_with_boundaries
+
+
+def show_prediction_retlstm(model, idx, x, y, corner, mean_std, a=1., hsv=(0, 255, 0)):
+    x = x[idx:idx+1]
+    y = y[idx:idx+1]
+    corner = corner[idx:idx+1]
+    x[corner != 0] = 0
+    x = x.swapaxes(0, 1).float()
+    pred = model(x)
+    x = x.swapaxes(0, 1)
+    pred = pred.squeeze()
+    y = y.squeeze()
+    x = x.squeeze()
+    pred_img = show_boundary(x, pred, mean_std, a=a, hsv=hsv).convert(mode="RGB")
+    target_img = show_boundary(x, y, mean_std, a=a, hsv=hsv).convert(mode="RGB")
+    return pred_img, target_img
+
+
+def show_raw(x, idx, mean_std=None):
+    x = x[idx]
+    if type(x) == torch.Tensor:
+        x = x.numpy()
+    if mean_std:
+        x = x * mean_std[1].numpy() + mean_std[0].numpy()
+        x = 255 * x
+    x = np.asarray(x, "uint8")
+    x = Image.fromarray(x.T)
+    return x

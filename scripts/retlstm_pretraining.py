@@ -62,14 +62,14 @@ for trial in range(num_trials):
     conv, in_features = model_getter(n_layer, kernel_size, n_stride)
     model = model_class(nn.Sequential(conv, nn.Linear(in_features, 8))).to(device)
     loss_fn = nn.MSELoss() if loss == "mse" else nn.L1Loss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, )
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate,)
     scaler = GradScaler()
     num_batches = len(train_dl)
     for epoch in range(num_epochs):
         train_loop = tqdm(
             train_dl, desc=f"Run [{trial} / {num_trials}]; Epoch [{epoch}/{num_epochs}]:",
             leave=False
-            )
+        )
         for batch_idx, (x, y) in enumerate(train_loop):
             x, y = x.swapaxes(0, 1).to(device), y.permute((-1, 0, 1)).to(device).float()
             optimizer.zero_grad()

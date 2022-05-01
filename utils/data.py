@@ -68,13 +68,21 @@ class OCTDataset(Dataset):
 
 
 class RetLSTMDataset(Dataset):
-    def __init__(self, root: str, transform=None, return_mask=False):
+    def __init__(self,
+                 root: str,
+                 normalize_img=True,
+                 normalize_lyr=True,
+                 transform=(None, None),
+                 return_mask=False):
         self.root = Path(root)
         self.img = lambda idx: f"img_{idx}.png"
         self.lyr = lambda idx: f"lyr_{idx}.pkl"
+        self.corner = lambda idx: f"corner_{idx}.png"
         self.transform = transform
         self.return_mask = return_mask
         self.mask = lambda idx: f"mask_{idx}.png"
+        self.normalize_img = normalize_img
+        self.normalize_lyr = normalize_lyr
 
     def __len__(self):
         return len(list(self.root.glob("img_*")))
@@ -82,26 +90,31 @@ class RetLSTMDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.root / self.img(idx)
         img = np.array(Image.open(img_path), dtype=float)
-        img /= 255
+        if self.normalize_img:
+            img /= 255
         lyr = torch.load(self.root / self.lyr(idx))
         lyr = lyr.numpy()
-        lyr /= img.shape[-2]
+        if self.normalize_lyr:
+            lyr /= img.shape[-2]
+        corner_path = self.root / self.corner(idx)
+        corner = np.array(Image.open(corner_path))
         if self.return_mask:
             mask_path = self.root / self.mask(idx)
             mask = np.array(Image.open(mask_path))
-        if self.transform:
+        if self.transform[0]:
             img = self.transform[0][0](image=img)["image"]
             lyr = self.transform[0][1](image=lyr)["image"]
-            if self.transform[1]:
-                transformed = self.transform(image=img, mask=lyr)
-                img = transformed["image"]
-                lyr = transformed["mask"]
+        if self.transform[1]:
+            transformed = self.transform[1](image=img, mask=lyr)
+            img = transformed["image"]
+            lyr = transformed["mask"]
         img = torch.from_numpy(img).T
         lyr = torch.from_numpy(lyr).T
+        corner = torch.from_numpy(corner).T
         if self.return_mask:
             mask = torch.from_numpy(mask)
-            return img, lyr, mask
-        return img, lyr
+            return img, lyr, corner, mask
+        return img, lyr, corner
 
 
 def create_patches(img, lyr, patch_width):
